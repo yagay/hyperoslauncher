@@ -21,7 +21,7 @@ public final class MainActivity extends Activity {
         root.addView(text("DesktopGridX", 26));
         root.addView(text(
                 "HyperOS 4 / com.miui.home · LSPosed API 102\n" +
-                "v0.7 使用 Launcher 原生 GridConfig 配置链优先注入网格，并新增 Native 持久化运行状态、Hook 命中计数与一键自检。" +
+                "v0.8 增加 Java Entry → Native Library → Native install → ShadowHook 的分层运行时自检。" +
                 "图标大小继续使用 Launcher 自己的 Settings.System: icon_size_scale。修改后强制停止桌面或重启手机生效。", 15));
 
         columns = numberField("桌面列数，例如 4 / 5 / 6 / 7");
@@ -46,8 +46,7 @@ public final class MainActivity extends Activity {
 
         runtimeStatus = text("运行时状态：尚未读取", 14);
         root.addView(runtimeStatus);
-        root.addView(text("诊断会通过 Root 收集 DesktopGridX / LSPosed / Launcher 日志、runtime-status.conf、当前系统 icon_size_scale、Launcher 配置键、" +
-                ".gnu_debugdata 符号以及 ARM64 候选点，导出到 Downloads/DesktopGridX。", 13));
+        root.addView(text("诊断会通过 Root 收集 Java Entry 状态、DesktopGridX Native 状态、LSPosed / ShadowHook / Launcher 日志、当前系统 icon_size_scale、Launcher 配置键、.gnu_debugdata 符号以及 ARM64 候选点。", 13));
         status = text("配置路径：/data/adb/desktopgridx/config.conf", 14); root.addView(status);
 
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll);
@@ -61,17 +60,15 @@ public final class MainActivity extends Activity {
 
     private void saveConfig() {
         int x=val(columns,0), y=val(rows,0), h=val(hotseat,0), icon=val(iconSize,0);
-        if ((x!=0 && (x<3||x>10)) || (y!=0 && (y<4||y>12)) || (h!=0 && (h<3||h>10)) ||
-                (icon!=0 && (icon<1||icon>100))) {
+        if ((x!=0 && (x<3||x>10)) || (y!=0 && (y<4||y>12)) || (h!=0 && (h<3||h>10)) || (icon!=0 && (icon<1||icon>100))) {
             status.setText("数值超出安全范围"); return;
         }
         String cfg="columns="+x+"\nrows="+y+"\nhotseat="+h+"\niconSize="+icon+"\ntracePrefs="+(tracePrefs.isChecked()?1:0)+"\n";
         String cmd="mkdir -p /data/adb/desktopgridx; printf '%s' "+shq(cfg)+" > /data/adb/desktopgridx/config.conf; " +
                 "chmod 0644 /data/adb/desktopgridx/config.conf; rm -f /data/adb/desktopgridx/runtime-status.conf /data/adb/desktopgridx/runtime-status.conf.tmp; " +
-                "if [ "+icon+" -gt 0 ]; then " +
-                "if ! grep -q '^original_icon_size_scale=' /data/adb/desktopgridx/original.conf 2>/dev/null; then " +
-                "V=$(settings get system icon_size_scale 2>/dev/null); printf 'original_icon_size_scale=%s\\n' \"$V\" >> /data/adb/desktopgridx/original.conf; chmod 0600 /data/adb/desktopgridx/original.conf; fi; " +
-                "settings put system icon_size_scale "+icon+"; fi";
+                "rm -f /data/user_de/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/user/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/data/com.miui.home/cache/desktopgridx-java-runtime.conf; " +
+                "if [ "+icon+" -gt 0 ]; then if ! grep -q '^original_icon_size_scale=' /data/adb/desktopgridx/original.conf 2>/dev/null; then " +
+                "V=$(settings get system icon_size_scale 2>/dev/null); printf 'original_icon_size_scale=%s\\n' \"$V\" >> /data/adb/desktopgridx/original.conf; chmod 0600 /data/adb/desktopgridx/original.conf; fi; settings put system icon_size_scale "+icon+"; fi";
         boolean ok=runRoot(cmd);
         if(!ok){ status.setText("保存失败：请确认 Root / su 授权"); return; }
         runtimeStatus.setText("运行时状态：已清空，等待 Launcher 下次启动重新生成");
@@ -83,11 +80,10 @@ public final class MainActivity extends Activity {
     }
 
     private void resetConfig() {
-        String cmd=
-                "if [ -f /data/adb/desktopgridx/original.conf ]; then " +
-                "V=$(sed -n 's/^original_icon_size_scale=//p' /data/adb/desktopgridx/original.conf | head -n1); " +
+        String cmd="if [ -f /data/adb/desktopgridx/original.conf ]; then V=$(sed -n 's/^original_icon_size_scale=//p' /data/adb/desktopgridx/original.conf | head -n1); " +
                 "if [ -n \"$V\" ] && [ \"$V\" != null ]; then settings put system icon_size_scale \"$V\"; else settings delete system icon_size_scale; fi; fi; " +
-                "rm -f /data/adb/desktopgridx/config.conf /data/adb/desktopgridx/resolved.conf /data/adb/desktopgridx/original.conf /data/adb/desktopgridx/runtime-status.conf /data/adb/desktopgridx/runtime-status.conf.tmp";
+                "rm -f /data/adb/desktopgridx/config.conf /data/adb/desktopgridx/resolved.conf /data/adb/desktopgridx/original.conf /data/adb/desktopgridx/runtime-status.conf /data/adb/desktopgridx/runtime-status.conf.tmp; " +
+                "rm -f /data/user_de/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/user/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/data/com.miui.home/cache/desktopgridx-java-runtime.conf";
         status.setText(runRoot(cmd) ? "已恢复 DesktopGridX 修改；强制停止桌面或重启后生效" : "恢复失败");
         runtimeStatus.setText("运行时状态：已清除");
         columns.setText(""); rows.setText(""); hotseat.setText(""); iconSize.setText(""); tracePrefs.setChecked(false);
@@ -111,26 +107,35 @@ public final class MainActivity extends Activity {
 
     private void refreshRuntimeStatus() {
         new Thread(() -> {
-            String raw=runRootOutput("if [ -f /data/adb/desktopgridx/runtime-status.conf ]; then cat /data/adb/desktopgridx/runtime-status.conf; else echo missing=1; fi");
+            String raw=runRootOutput(
+                    "echo '===JAVA==='; J=''; for F in /data/user_de/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/user/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/data/com.miui.home/cache/desktopgridx-java-runtime.conf; do if [ -f \"$F\" ]; then echo path=$F; cat \"$F\"; J=1; break; fi; done; [ -n \"$J\" ] || echo java_missing=1; " +
+                    "echo '===NATIVE==='; if [ -f /data/adb/desktopgridx/runtime-status.conf ]; then cat /data/adb/desktopgridx/runtime-status.conf; else echo native_missing=1; fi");
             String summary=formatRuntime(raw);
             runOnUiThread(() -> runtimeStatus.setText(summary));
         },"DesktopGridX-SelfCheck").start();
     }
 
     private String formatRuntime(String raw){
-        if(raw==null || raw.trim().isEmpty() || raw.contains("missing=1")) return "运行时状态：未生成。保存配置后强制停止桌面，再返回桌面启动一次。";
-        String stage=find(raw,"stage"), nativeLoaded=find(raw,"native_loaded"), sh=find(raw,"shadowhook_init"), pref=find(raw,"preference_hook_installed");
-        String px=find(raw,"pref_cell_x_hits"), py=find(raw,"pref_cell_y_hits"), gx=find(raw,"getter_x_hits"), gy=find(raw,"getter_y_hits"), hs=find(raw,"hotseat_hits");
-        String method=find(raw,"resolver"), err=find(raw,"last_error"), pid=find(raw,"pid"), base=find(raw,"launcher_base");
+        if(raw==null || raw.trim().isEmpty()) return "运行时状态：读取失败";
+        String javaPart=section(raw,"===JAVA===","===NATIVE===");
+        String nativePart=section(raw,"===NATIVE===",null);
+        boolean javaOk=!javaPart.contains("java_missing=1") && "1".equals(find(javaPart,"desktopgridx_java_entry"));
+        String jStage=find(javaPart,"desktopgridx_stage");
+        String jLoad=find(javaPart,"desktopgridx_native_library_loaded");
+        String jInstall=find(javaPart,"desktopgridx_native_install_result");
+        String jErr=find(javaPart,"desktopgridx_error");
+        if(nativePart.contains("native_missing=1")) {
+            return "运行时自检：\nJava Entry="+(javaOk?"✓ 已进入":"✕ 未进入/无状态")+"\nJava stage="+jStage+"\nNative library="+jLoad+"  installResult="+jInstall+"\nJava error="+jErr+"\nNative Runtime=✕ 未生成";
+        }
+        String stage=find(nativePart,"stage"), nativeLoaded=find(nativePart,"native_loaded"), sh=find(nativePart,"shadowhook_init"), pref=find(nativePart,"preference_hook_installed");
+        String px=find(nativePart,"pref_cell_x_hits"), py=find(nativePart,"pref_cell_y_hits"), gx=find(nativePart,"getter_x_hits"), gy=find(nativePart,"getter_y_hits"), hs=find(nativePart,"hotseat_hits");
+        String method=find(nativePart,"resolver"), err=find(nativePart,"last_error"), pid=find(nativePart,"pid"), base=find(nativePart,"launcher_base");
         boolean hit=positive(px)||positive(py)||positive(gx)||positive(gy)||positive(hs);
-        return "运行时自检："+("1".equals(nativeLoaded)?"✓ Native 已加载":"✕ Native 未确认")+"\n"+
-                "PID="+pid+"  base="+base+"\n"+
-                "stage="+stage+"  resolver="+method+"\n"+
-                "ShadowHook="+sh+"  PreferenceHook="+pref+"\n"+
-                "命中：prefX="+px+" prefY="+py+" getterX="+gx+" getterY="+gy+" hotseat="+hs+"\n"+
-                "实际调用验证："+(hit?"✓ 已命中":"尚未命中/尚未触发")+"\n"+
-                "last_error="+err;
+        return "运行时自检：\nJava Entry="+(javaOk?"✓":"✕")+" stage="+jStage+"\nNative="+("1".equals(nativeLoaded)?"✓":"✕")+" PID="+pid+" base="+base+"\n"+
+                "stage="+stage+" resolver="+method+"\nShadowHook="+sh+" PreferenceHook="+pref+"\n"+
+                "命中：prefX="+px+" prefY="+py+" getterX="+gx+" getterY="+gy+" hotseat="+hs+"\n实际调用验证："+(hit?"✓ 已命中":"尚未命中/尚未触发")+"\nlast_error="+err;
     }
+    private static String section(String raw,String start,String end){ int a=raw.indexOf(start); if(a<0)return ""; a+=start.length(); int b=end==null?raw.length():raw.indexOf(end,a); if(b<0)b=raw.length(); return raw.substring(a,b); }
     private static boolean positive(String s){ try{return Long.parseLong(s)>0;}catch(Exception e){return false;} }
     private static String find(String raw,String key){ for(String l:raw.split("\\R")){int p=l.indexOf('=');if(p>0&&l.substring(0,p).equals(key))return l.substring(p+1);}return "?"; }
 
