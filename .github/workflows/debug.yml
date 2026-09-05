@@ -46,11 +46,13 @@ jobs:
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
+            assets/native_init \
             lib/arm64-v8a/libdesktopgridx.so; do
             unzip -l "$APK" | grep -F "$F"
           done
           unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx.so'
+          unzip -p "$APK" assets/native_init | grep -Fx 'libdesktopgridx.so'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
           unzip -p "$APK" lib/arm64-v8a/libdesktopgridx.so > /tmp/libdesktopgridx.so
           readelf -Ws /tmp/libdesktopgridx.so | grep -E 'GLOBAL.*DEFAULT.*native_init$'
@@ -60,13 +62,22 @@ jobs:
           with zipfile.ZipFile(apk) as z:
               info=z.getinfo('lib/arm64-v8a/libdesktopgridx.so')
               print('libdesktopgridx.so compress_type=', info.compress_type)
-              if info.compress_type != zipfile.ZIP_STORED:
-                  raise SystemExit('libdesktopgridx.so is compressed; direct native loading compatibility is not guaranteed')
-              for name in ('META-INF/xposed/java_init.list','META-INF/xposed/native_init.list','META-INF/xposed/module.prop','META-INF/xposed/scope.list'):
+              # v0.15 intentionally uses legacy JNI packaging so Android extracts native libs.
+              # Deflated (8) is expected/allowed here; the extracted filesystem copy is the
+              # compatibility path we are testing for HYOS.
+              if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                  raise SystemExit(f'unexpected native library compression type: {info.compress_type}')
+              for name in (
+                  'META-INF/xposed/java_init.list',
+                  'META-INF/xposed/native_init.list',
+                  'META-INF/xposed/module.prop',
+                  'META-INF/xposed/scope.list',
+                  'assets/native_init',
+              ):
                   data=z.read(name)
                   if not data.strip():
                       raise SystemExit(f'{name} is empty')
-          print('Xposed loader packaging verification passed.')
+          print('Xposed/HYOS loader packaging verification passed.')
           PY
 
       - name: Upload debug APK
