@@ -64,6 +64,23 @@ final class LsposedInspector {
                 "logcat -d -b all -v threadtime -t 20000 2>/dev/null | grep -iE 'DGX_HYOS_PROBE|DGX_NATIVE_ENTRY|DesktopGridX|libdesktopgridx|hyos_spawner|HyperOS Rust Runtime|HyperOS Runtime|onAppSpecialized|native_init|dlopen|linker.*desktopgridx' | tail -n 6000 || true",
                 20, 4 * 1024 * 1024));
 
+        append(out, "=== HYOS working-module metadata comparator ===", RootShell.run(
+                "P=$(pidof com.miui.home | awk '{print $1}'); " +
+                "echo launcher_pid=$P; " +
+                "PKGS='com.yagay.desktopgridx com.chasers7ar.docksink com.kiminonawa.HyperLight com.fuck.HyperOSTheme'; " +
+                "for PKG in $PKGS; do " +
+                "echo; echo '===== PACKAGE ' $PKG ' ====='; " +
+                "APK=$(pm path $PKG 2>/dev/null | head -n1 | cut -d: -f2); echo apk=$APK; " +
+                "[ -n \"$APK\" ] || { echo package_missing=1; continue; }; " +
+                "echo '-- package flags --'; dumpsys package $PKG 2>/dev/null | grep -E 'versionName=|versionCode=|primaryCpuAbi=|secondaryCpuAbi=|extractNativeLibs|debuggable|flags=|privateFlags=|targetSdk=' | head -n 120 || true; " +
+                "echo '-- xposed modern metadata listing --'; unzip -l \"$APK\" 'META-INF/xposed/*' 2>&1 || true; " +
+                "for E in META-INF/xposed/java_init.list META-INF/xposed/native_init.list META-INF/xposed/module.prop META-INF/xposed/scope.list assets/xposed_init assets/native_init; do echo \"--- $E ---\"; unzip -p \"$APK\" \"$E\" 2>/dev/null || true; echo; done; " +
+                "echo '-- native libraries --'; unzip -lv \"$APK\" 'lib/*/*.so' 2>/dev/null | head -n 400 || true; " +
+                "echo '-- dex entries --'; unzip -l \"$APK\" 'classes*.dex' 2>/dev/null | head -n 80 || true; " +
+                "echo '-- launcher mapping --'; if [ -n \"$P\" ]; then grep -F \"/$PKG-\" /proc/$P/maps 2>/dev/null | head -n 80 || true; fi; " +
+                "done",
+                30, 8 * 1024 * 1024));
+
         append(out, "=== focused framework logs ===", RootShell.run(
                 "for D in /data/adb/lspd/log /data/adb/lsposed/log /data/adb/lspd/logs /data/adb/lsposed/logs; do " +
                 "if [ -d \"$D\" ]; then find \"$D\" -maxdepth 1 -type f \\( -name 'modules*.log' -o -name 'verbose*.log' -o -name 'logcat*.log' \\) 2>/dev/null | sort | tail -n 40 | while read F; do " +
