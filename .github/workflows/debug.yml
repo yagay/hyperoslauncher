@@ -35,17 +35,39 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify Xposed native entry
+      - name: Verify Xposed loader packaging
         shell: bash
         run: |
           set -euo pipefail
           APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n1)
           test -n "$APK"
-          unzip -l "$APK" | grep -F 'META-INF/xposed/native_init.list'
+          for F in \
+            META-INF/xposed/java_init.list \
+            META-INF/xposed/native_init.list \
+            META-INF/xposed/module.prop \
+            META-INF/xposed/scope.list \
+            lib/arm64-v8a/libdesktopgridx.so; do
+            unzip -l "$APK" | grep -F "$F"
+          done
+          unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx.so'
+          unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
           unzip -p "$APK" lib/arm64-v8a/libdesktopgridx.so > /tmp/libdesktopgridx.so
           readelf -Ws /tmp/libdesktopgridx.so | grep -E 'GLOBAL.*DEFAULT.*native_init$'
-          echo 'Native entry packaging/export verification passed.'
+          python3 - "$APK" <<'PY'
+          import sys, zipfile
+          apk=sys.argv[1]
+          with zipfile.ZipFile(apk) as z:
+              info=z.getinfo('lib/arm64-v8a/libdesktopgridx.so')
+              print('libdesktopgridx.so compress_type=', info.compress_type)
+              if info.compress_type != zipfile.ZIP_STORED:
+                  raise SystemExit('libdesktopgridx.so is compressed; direct native loading compatibility is not guaranteed')
+              for name in ('META-INF/xposed/java_init.list','META-INF/xposed/native_init.list','META-INF/xposed/module.prop','META-INF/xposed/scope.list'):
+                  data=z.read(name)
+                  if not data.strip():
+                      raise SystemExit(f'{name} is empty')
+          print('Xposed loader packaging verification passed.')
+          PY
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
