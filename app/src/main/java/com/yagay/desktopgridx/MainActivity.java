@@ -19,8 +19,8 @@ public final class MainActivity extends Activity {
         root.addView(text("DesktopGridX", 26));
         root.addView(text(
                 "HyperOS 4 / com.miui.home · LSPosed API 102\n" +
-                "v0.10 使用 Native Entry 主入口 + Java 无条件早加载兜底，并将模块 Native 库以未压缩形式打包，提升 hyos_spawner/Modern Xposed 加载兼容性。" +
-                "Hook 仍保持事务化安装、失败回滚、unique-mode ShadowHook 和 ABI 运行时验证。", 15));
+                "v0.11 增加全链路一键诊断：LSPosed 模块识别/启用/scope、Java/Native Entry、Launcher maps、ShadowHook、Resolver、linker/SELinux、崩溃/ANR 与启动时间线。" +
+                "采集仅聚焦 DesktopGridX/Launcher 相关证据，并对常见凭据字段做基础脱敏。", 15));
 
         columns = numberField("桌面列数，例如 4 / 5 / 6 / 7");
         rows = numberField("桌面行数，例如 6 / 7 / 8 / 9");
@@ -38,11 +38,11 @@ public final class MainActivity extends Activity {
                 status.setText(ok?"已强制停止桌面；返回桌面后再点运行时自检":"强制停止失败"))); root.addView(restart);
         Button locate = new Button(this); locate.setText("自动重新定位 Hook 点"); locate.setOnClickListener(v -> autoLocate(locate)); root.addView(locate);
         Button selfCheck = new Button(this); selfCheck.setText("运行时自检"); selfCheck.setOnClickListener(v -> refreshRuntimeStatus()); root.addView(selfCheck);
-        Button diagnostic = new Button(this); diagnostic.setText("一键导出诊断包"); diagnostic.setOnClickListener(v -> exportDiagnostic(diagnostic)); root.addView(diagnostic);
+        Button diagnostic = new Button(this); diagnostic.setText("一键导出全链路诊断包"); diagnostic.setOnClickListener(v -> exportDiagnostic(diagnostic)); root.addView(diagnostic);
 
         runtimeStatus = text("运行时状态：尚未读取", 14);
         root.addView(runtimeStatus);
-        root.addView(text("自检优先读取 Launcher 自己 cache 中的 Native Entry 状态，因此不依赖 /data/adb 写权限；诊断仍会同时收集 LSPosed / ShadowHook / Launcher maps。", 13));
+        root.addView(text("诊断包会抓取 LSPosed enabled/scope 数据、模块 APK/Xposed 元数据、Java/Native Entry、Launcher maps、ShadowHook/Resolver、有限窗口 logcat、崩溃/ANR、linker/SELinux 与启动时间线；不会主动导出无关应用的完整日志。", 13));
         status = text("配置路径：/data/adb/desktopgridx/config.conf", 14); root.addView(status);
 
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll);
@@ -125,7 +125,7 @@ public final class MainActivity extends Activity {
         String nativePart=section(raw,"===NATIVE===",null);
         boolean javaOk=!javaPart.contains("java_missing=1") && "1".equals(find(javaPart,"desktopgridx_java_entry"));
         if(nativePart.contains("native_missing=1")) {
-            return "运行时自检：\nNative Entry=✕ 未生成\nJava fallback="+(javaOk?"✓":"✕")+"\n如果 Launcher maps 已有模块 APK 但这里仍缺失，应检查 native_init.list / native_init 日志。";
+            return "运行时自检：\nNative Entry=✕ 未生成\nJava fallback="+(javaOk?"✓":"✕")+"\n如果仍缺失，请直接导出全链路诊断包；v0.11 会同时检查 LSPosed enabled/scope 和模块分发状态。";
         }
         String entry=find(nativePart,"native_entry_seen"), install=find(nativePart,"install_state"), stage=find(nativePart,"stage"), sh=find(nativePart,"shadowhook_init"), pref=find(nativePart,"preference_hook_installed");
         String px=find(nativePart,"pref_cell_x_hits"), py=find(nativePart,"pref_cell_y_hits"), gx=find(nativePart,"getter_x_hits"), gy=find(nativePart,"getter_y_hits"), hs=find(nativePart,"hotseat_hits");
@@ -147,7 +147,7 @@ public final class MainActivity extends Activity {
         }, "DesktopGridX-Locator").start();
     }
     private void exportDiagnostic(Button button) {
-        button.setEnabled(false); status.setText("正在收集诊断信息…");
+        button.setEnabled(false); status.setText("正在收集全链路诊断信息…");
         DiagnosticCollector.export(this, message -> runOnUiThread(() -> {
             button.setEnabled(true); status.setText(message); Toast.makeText(this, message, Toast.LENGTH_LONG).show();
         }));
