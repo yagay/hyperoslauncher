@@ -87,6 +87,8 @@ final class LsposedInspector {
                 "grep -H -n -iE 'desktopgridx|com\\.yagay\\.desktopgridx|com\\.miui\\.home|native_init|HookEntry|libdesktopgridx|UnsatisfiedLinkError|ClassNotFound|scope|module loaded|hyos_spawner|HyperOS Runtime' \"$F\" 2>/dev/null | tail -n 1200 || true; done; fi; done",
                 20, 4 * 1024 * 1024));
 
+        out.append("\n=== ONE-SHOT HYOS MULTI-POINT MATRIX ===\n");
+        out.append(HyosProbeMatrix.collect());
         return sanitize(out.toString());
     }
 
