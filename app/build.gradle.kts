@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 8
-        versionName = "0.8.0"
+        versionCode = 9
+        versionName = "0.9.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake { cppFlags += listOf("-std=c++20", "-fvisibility=hidden") }
@@ -18,7 +18,10 @@ android {
 
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     buildFeatures { prefab = true }
-    packaging { jniLibs { useLegacyPackaging = true } }
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+        resources { merges += "META-INF/xposed/*" }
+    }
 }
 
 dependencies {
