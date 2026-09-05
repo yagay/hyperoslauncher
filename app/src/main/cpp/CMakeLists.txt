@@ -5,7 +5,9 @@ set(CMAKE_ANDROID_STL_TYPE c++_static)
 
 # The only LSPosed/HYOS runtime payload. It talks directly to NativeAPIEntries
 # supplied by LSPosed 2.2.0-it 7869 and has no ShadowHook dependency.
-add_library(desktopgridx_hyos SHARED hyos_hook.cpp)
+# hyos_stage_probe.cpp contributes only a constructor/logcat stage marker so we
+# can distinguish APK-backed mmap from a fully initialized ELF.
+add_library(desktopgridx_hyos SHARED hyos_hook.cpp hyos_stage_probe.cpp)
 target_compile_options(desktopgridx_hyos PRIVATE
     -fno-exceptions
     -fno-rtti
