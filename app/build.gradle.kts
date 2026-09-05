@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 14
-        versionName = "0.14.0"
+        versionCode = 15
+        versionName = "0.15.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake { cppFlags += listOf("-std=c++20", "-fvisibility=hidden") }
@@ -20,8 +20,8 @@ android {
     buildFeatures { prefab = true }
     packaging {
         jniLibs {
-            // Modern Xposed native entry needs the module .so directly loadable from the APK.
-            // false keeps JNI libs uncompressed/page-aligned instead of legacy compressed packaging.
+            // Keep the native module directly loadable from the APK while Android also extracts
+            // a filesystem copy (android:extractNativeLibs=true) for HYOS/legacy loader compatibility.
             useLegacyPackaging = false
             pickFirsts += "lib/arm64-v8a/libshadowhook.so"
         }
