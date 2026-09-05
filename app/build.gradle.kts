@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 20
-        versionName = "0.20.0"
+        versionCode = 21
+        versionName = "0.21.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {
@@ -20,20 +20,17 @@ android {
     }
 
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
-    buildFeatures { prefab = true }
     packaging {
         jniLibs {
-            // HYOS native entries are loaded directly from the APK by LSPosed IT 7869.
-            // Match known-good HyperOS 4 modules instead of forcing library extraction.
+            // LSPosed IT 7869 maps the Modern native entry directly from the APK.
             useLegacyPackaging = false
-            pickFirsts += "lib/arm64-v8a/libshadowhook.so"
         }
         resources { merges += "META-INF/xposed/*" }
     }
 }
 
 dependencies {
+    // Keep the module contract exactly aligned with LSPosed 2.2.0-it 7869.
     compileOnly("io.github.libxposed:api:102.0.0")
-    implementation("com.bytedance.android:shadowhook:2.0.1")
     implementation("org.tukaani:xz:1.10")
 }
