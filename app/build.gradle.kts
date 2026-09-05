@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 18
-        versionName = "0.18.0"
+        versionCode = 19
+        versionName = "0.19.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake { cppFlags += listOf("-std=c++20", "-fvisibility=hidden") }
@@ -20,6 +20,8 @@ android {
     buildFeatures { prefab = true }
     packaging {
         jniLibs {
+            // Keep the extracted-library experiment for HYOS native loading; this does not
+            // change the Xposed API contract, which remains Modern API 102 only.
             useLegacyPackaging = true
             pickFirsts += "lib/arm64-v8a/libshadowhook.so"
         }
@@ -28,11 +30,9 @@ android {
 }
 
 dependencies {
-    // Keep Modern API 102 for the normal LSPosed path.
+    // LSPosed 2.2.0-it 7869 exposes Modern Xposed API 102. Keep the Java contract consistent
+    // with META-INF/xposed/module.prop; do not mix legacy de.robv.android.xposed API classes.
     compileOnly("io.github.libxposed:api:102.0.0")
-    // LSPosed 2.2.0-it 7869 HYOS compatibility marker path observed on-device
-    // also accepts legacy Xposed entry metadata. This dependency is compile-only.
-    compileOnly("de.robv.android.xposed:api:82")
     implementation("com.bytedance.android:shadowhook:2.0.1")
     implementation("org.tukaani:xz:1.10")
 }
