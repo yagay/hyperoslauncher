@@ -46,38 +46,50 @@ jobs:
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
+            assets/xposed_init \
             assets/native_init \
+            lib/arm64-v8a/libdesktopgridx_minprobe.so \
             lib/arm64-v8a/libdesktopgridx.so; do
             unzip -l "$APK" | grep -F "$F"
           done
           unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
+          unzip -p "$APK" assets/xposed_init | grep -Fx 'com.yagay.desktopgridx.LegacyHookEntry'
+          unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx_minprobe.so'
           unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx.so'
+          unzip -p "$APK" assets/native_init | grep -Fx 'libdesktopgridx_minprobe.so'
           unzip -p "$APK" assets/native_init | grep -Fx 'libdesktopgridx.so'
+          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=93'
+          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=100'
+          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
-          unzip -p "$APK" lib/arm64-v8a/libdesktopgridx.so > /tmp/libdesktopgridx.so
-          readelf -Ws /tmp/libdesktopgridx.so | grep -E 'GLOBAL.*DEFAULT.*native_init$'
+          for SO in libdesktopgridx_minprobe.so libdesktopgridx.so; do
+            unzip -p "$APK" "lib/arm64-v8a/$SO" > "/tmp/$SO"
+            readelf -Ws "/tmp/$SO" | grep -E 'GLOBAL.*DEFAULT.*native_init$'
+          done
           python3 - "$APK" <<'PY'
           import sys, zipfile
           apk=sys.argv[1]
+          required=(
+              'META-INF/xposed/java_init.list',
+              'META-INF/xposed/native_init.list',
+              'META-INF/xposed/module.prop',
+              'META-INF/xposed/scope.list',
+              'assets/xposed_init',
+              'assets/native_init',
+              'lib/arm64-v8a/libdesktopgridx_minprobe.so',
+              'lib/arm64-v8a/libdesktopgridx.so',
+          )
           with zipfile.ZipFile(apk) as z:
-              info=z.getinfo('lib/arm64-v8a/libdesktopgridx.so')
-              print('libdesktopgridx.so compress_type=', info.compress_type)
-              # v0.15 intentionally uses legacy JNI packaging so Android extracts native libs.
-              # Deflated (8) is expected/allowed here; the extracted filesystem copy is the
-              # compatibility path we are testing for HYOS.
-              if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
-                  raise SystemExit(f'unexpected native library compression type: {info.compress_type}')
-              for name in (
-                  'META-INF/xposed/java_init.list',
-                  'META-INF/xposed/native_init.list',
-                  'META-INF/xposed/module.prop',
-                  'META-INF/xposed/scope.list',
-                  'assets/native_init',
-              ):
+              for name in required:
                   data=z.read(name)
-                  if not data.strip():
+                  if not data:
                       raise SystemExit(f'{name} is empty')
-          print('Xposed/HYOS loader packaging verification passed.')
+              for name in ('lib/arm64-v8a/libdesktopgridx_minprobe.so','lib/arm64-v8a/libdesktopgridx.so'):
+                  info=z.getinfo(name)
+                  print(name, 'compress_type=', info.compress_type)
+                  if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                      raise SystemExit(f'unexpected native library compression type: {info.compress_type}')
+          print('LSPosed 7869 compatibility packaging verification passed.')
           PY
 
       - name: Upload debug APK
