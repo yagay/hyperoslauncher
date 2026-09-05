@@ -1,0 +1,6 @@
+DESKTOPGRIDX_HYOS_1.0 {
+    global:
+        native_init;
+    local:
+        *;
+};
