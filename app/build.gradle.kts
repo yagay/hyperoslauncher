@@ -30,7 +30,6 @@ android {
 }
 
 dependencies {
-    // Keep the module contract exactly aligned with LSPosed 2.2.0-it 7869.
-    compileOnly("io.github.libxposed:api:102.0.0")
+    // XZ is used only by the app-side .gnu_debugdata resolver.
     implementation("org.tukaani:xz:1.10")
 }
