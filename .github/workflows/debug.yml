@@ -35,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify Xposed loader packaging
+      - name: Verify LSPosed API 102 / HYOS packaging
         shell: bash
         run: |
           set -euo pipefail
@@ -46,26 +46,37 @@ jobs:
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
-            assets/xposed_init \
             assets/native_init \
             lib/arm64-v8a/libdesktopgridx_minprobe.so \
             lib/arm64-v8a/libdesktopgridx.so; do
             unzip -l "$APK" | grep -F "$F"
           done
+
+          # Modern API 102 contract must stay internally consistent.
           unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
-          unzip -p "$APK" assets/xposed_init | grep -Fx 'com.yagay.desktopgridx.LegacyHookEntry'
-          unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx_minprobe.so'
-          unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx.so'
-          unzip -p "$APK" assets/native_init | grep -Fx 'libdesktopgridx_minprobe.so'
-          unzip -p "$APK" assets/native_init | grep -Fx 'libdesktopgridx.so'
-          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=93'
-          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=100'
+          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=102'
+          unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
+
+          # Do not mix a legacy Java module into a Modern API 102 APK.
+          if unzip -l "$APK" | grep -Fq 'assets/xposed_init'; then
+            echo 'assets/xposed_init must not be present in the API 102 build' >&2
+            exit 1
+          fi
+          if unzip -l "$APK" | grep -Fq 'LegacyHookEntry'; then
+            echo 'LegacyHookEntry must not be packaged' >&2
+            exit 1
+          fi
+
+          # Keep both native A/B probes while diagnosing the 7869 HYOS dispatcher.
           for SO in libdesktopgridx_minprobe.so libdesktopgridx.so; do
+            unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx "$SO"
+            unzip -p "$APK" assets/native_init | grep -Fx "$SO"
             unzip -p "$APK" "lib/arm64-v8a/$SO" > "/tmp/$SO"
             readelf -Ws "/tmp/$SO" | grep -E 'GLOBAL.*DEFAULT.*native_init$'
           done
+
           python3 - "$APK" <<'PY'
           import sys, zipfile
           apk=sys.argv[1]
@@ -74,22 +85,27 @@ jobs:
               'META-INF/xposed/native_init.list',
               'META-INF/xposed/module.prop',
               'META-INF/xposed/scope.list',
-              'assets/xposed_init',
               'assets/native_init',
               'lib/arm64-v8a/libdesktopgridx_minprobe.so',
               'lib/arm64-v8a/libdesktopgridx.so',
           )
           with zipfile.ZipFile(apk) as z:
+              names=set(z.namelist())
+              if 'assets/xposed_init' in names:
+                  raise SystemExit('legacy Java entry unexpectedly packaged')
               for name in required:
                   data=z.read(name)
                   if not data:
                       raise SystemExit(f'{name} is empty')
+              prop=z.read('META-INF/xposed/module.prop').decode('utf-8')
+              if 'minApiVersion=102' not in prop or 'targetApiVersion=102' not in prop:
+                  raise SystemExit('module.prop does not declare API 102 consistently')
               for name in ('lib/arm64-v8a/libdesktopgridx_minprobe.so','lib/arm64-v8a/libdesktopgridx.so'):
                   info=z.getinfo(name)
                   print(name, 'compress_type=', info.compress_type)
                   if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
                       raise SystemExit(f'unexpected native library compression type: {info.compress_type}')
-          print('LSPosed 7869 compatibility packaging verification passed.')
+          print('LSPosed 7869 API 102 packaging verification passed.')
           PY
 
       - name: Upload debug APK
