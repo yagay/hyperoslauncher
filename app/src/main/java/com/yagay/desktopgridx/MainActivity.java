@@ -19,8 +19,8 @@ public final class MainActivity extends Activity {
         root.addView(text("DesktopGridX", 26));
         root.addView(text(
                 "HyperOS 4 / com.miui.home · LSPosed API 102\n" +
-                "v0.9 使用 Native Entry 主入口、事务化 Hook/失败回滚、unique-mode ShadowHook、ABI 运行时验证和线程安全自检。" +
-                "Java Entry 仅作为兼容兜底。修改后强制停止桌面或重启手机生效。", 15));
+                "v0.10 使用 Native Entry 主入口 + Java 无条件早加载兜底，并将模块 Native 库以未压缩形式打包，提升 hyos_spawner/Modern Xposed 加载兼容性。" +
+                "Hook 仍保持事务化安装、失败回滚、unique-mode ShadowHook 和 ABI 运行时验证。", 15));
 
         columns = numberField("桌面列数，例如 4 / 5 / 6 / 7");
         rows = numberField("桌面行数，例如 6 / 7 / 8 / 9");
