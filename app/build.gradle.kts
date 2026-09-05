@@ -19,7 +19,12 @@ android {
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     buildFeatures { prefab = true }
     packaging {
-        jniLibs { useLegacyPackaging = true }
+        jniLibs {
+            // Modern Xposed native entry needs the module .so directly loadable from the APK.
+            // false keeps JNI libs uncompressed/page-aligned instead of legacy compressed packaging.
+            useLegacyPackaging = false
+            pickFirsts += "lib/arm64-v8a/libshadowhook.so"
+        }
         resources { merges += "META-INF/xposed/*" }
     }
 }
