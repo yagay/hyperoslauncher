@@ -1,6 +1,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
