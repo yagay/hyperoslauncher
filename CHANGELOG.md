@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.11.0
+
+- Added read-only `LsposedInspector` for LSPosed module registration diagnostics.
+- Detects known LSPosed data roots and reports framework paths, CLI availability, framework status and relevant module files.
+- Reads `modules_config.db` in read-only mode when `sqlite3` is available and extracts only DesktopGridX / `com.miui.home` module and scope rows.
+- Reports DesktopGridX enabled state, actual runtime scope and user ID where the LSPosed schema exposes them.
+- Falls back to focused string matching when SQLite CLI support is unavailable.
+- Added focused LSPosed CLI collection for `status`, module listing and DesktopGridX scope listing when the CLI exists.
+- Added package/runtime cross-checks, Launcher mapping markers and LSPosed/Zygisk process evidence.
+- Expanded the one-click diagnostic ZIP with `10c-lsposed-state.txt`.
+- Added bounded crash-buffer, tombstone and ANR excerpts for DesktopGridX/Launcher-related failures.
+- Added linker namespace, module native-file and SELinux/dlopen evidence collection.
+- Added boot/update/Launcher/LSPosed log timestamp timeline to identify stale module generations without guessing.
+- Expanded module APK diagnostics with Xposed metadata, native ZIP entry metadata, ABI/extractNativeLibs/version/update fields.
+- Kept log collection focused on DesktopGridX, LSPosed and `com.miui.home`; avoids exporting unrelated apps' complete logs.
+- Added basic credential/token redaction for LSPosed state-inspector output.
+- Increased bounded diagnostic limits while preserving command timeouts to avoid UI hangs or unbounded ZIP growth.
+- Renamed the app action to `一键导出全链路诊断包` and bumped app version to 0.11.0 / versionCode 11.
+
 ## 0.10.0
 
 - Added loader-compatibility fallback: Java `onModuleLoaded()` now immediately loads `libdesktopgridx.so` without relying on Java process-name matching.
