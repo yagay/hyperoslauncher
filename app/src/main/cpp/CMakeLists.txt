@@ -1,0 +1,5 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(desktopgridx)
+find_package(shadowhook REQUIRED CONFIG)
+add_library(desktopgridx SHARED native_hook.cpp)
+target_link_libraries(desktopgridx log android shadowhook::shadowhook)
