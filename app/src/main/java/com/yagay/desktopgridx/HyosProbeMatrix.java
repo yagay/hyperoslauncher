@@ -10,6 +10,7 @@ final class HyosProbeMatrix {
         append(out, "=== A. package / entry metadata ===", RootShell.run(
                 "APK=$(pm path com.yagay.desktopgridx | head -n1 | cut -d: -f2); echo apk=$APK; " +
                 "echo '-- package flags --'; dumpsys package com.yagay.desktopgridx 2>/dev/null | grep -E 'versionName=|versionCode=|codePath=|primaryCpuAbi=|secondaryCpuAbi=|extractNativeLibs|nativeLibraryDir=' || true; " +
+                "echo '-- module.prop --'; unzip -p \"$APK\" META-INF/xposed/module.prop 2>/dev/null || true; echo; " +
                 "echo '-- modern entries --'; unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null || true; unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null || true; unzip -p \"$APK\" META-INF/xposed/scope.list 2>/dev/null || true; " +
                 "echo '-- legacy entries --'; unzip -p \"$APK\" assets/xposed_init 2>/dev/null || true; unzip -p \"$APK\" assets/native_init 2>/dev/null || true; " +
                 "echo '-- native entries --'; unzip -lv \"$APK\" 'lib/*/*.so' 2>/dev/null | head -n 250 || true",
@@ -41,7 +42,7 @@ final class HyosProbeMatrix {
                 25, 4 * 1024 * 1024));
 
         append(out, "=== G. HYOS / LSPosed dispatch logs ===", RootShell.run(
-                "logcat -d -b all -v threadtime -t 30000 2>/dev/null | grep -iE 'hyos_spawner|HyperOS Rust Runtime|HyperOS Runtime|onAppSpecialized|DGX_MIN_PROBE|DGX_HYOS_PROBE|DGX_NATIVE_ENTRY|DesktopGridX|libdesktopgridx|module loaded|scope|native_init' | tail -n 9000 || true",
+                "logcat -d -b all -v threadtime -t 30000 2>/dev/null | grep -iE 'hyos_spawner|HyperOS Rust Runtime|HyperOS Runtime|onAppSpecialized|DGX_MIN_PROBE|DGX_HYOS_PROBE|DGX_NATIVE_ENTRY|DGX_LEGACY_ENTRY|DesktopGridX|libdesktopgridx|module loaded|scope|native_init' | tail -n 9000 || true",
                 25, 4 * 1024 * 1024));
 
         append(out, "=== H. crash / SELinux ===", RootShell.run(
@@ -49,8 +50,18 @@ final class HyosProbeMatrix {
                 20, 3 * 1024 * 1024));
 
         append(out, "=== I. working-module comparison ===", RootShell.run(
-                "P=$(pidof com.miui.home | awk '{print $1}'); for PKG in com.chasers7ar.docksink com.kiminonawa.HyperLight com.fuck.HyperOSTheme; do APK=$(pm path \"$PKG\" 2>/dev/null | head -n1 | cut -d: -f2); [ -n \"$APK\" ] || continue; echo ===== $PKG =====; echo apk=$APK; dumpsys package \"$PKG\" 2>/dev/null | grep -E 'versionName=|versionCode=|extractNativeLibs|primaryCpuAbi=|codePath=' | head -n 80; echo '-- entries --'; unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null || true; unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null || true; unzip -p \"$APK\" assets/native_init 2>/dev/null || true; unzip -p \"$APK\" assets/xposed_init 2>/dev/null || true; echo '-- libs --'; unzip -l \"$APK\" 'lib/*/*.so' 2>/dev/null | head -n 200 || true; if [ -n \"$P\" ]; then echo '-- mapped --'; grep -F \"$APK\" /proc/$P/maps 2>/dev/null | head -n 50 || true; fi; done",
+                "P=$(pidof com.miui.home | awk '{print $1}'); for PKG in com.chasers7ar.docksink com.kiminonawa.HyperLight com.fuck.HyperOSTheme; do APK=$(pm path \"$PKG\" 2>/dev/null | head -n1 | cut -d: -f2); [ -n \"$APK\" ] || continue; echo ===== $PKG =====; echo apk=$APK; dumpsys package \"$PKG\" 2>/dev/null | grep -E 'versionName=|versionCode=|extractNativeLibs|primaryCpuAbi=|codePath=' | head -n 80; echo '-- module.prop --'; unzip -p \"$APK\" META-INF/xposed/module.prop 2>/dev/null || true; echo; echo '-- entries --'; unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null || true; unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null || true; unzip -p \"$APK\" assets/native_init 2>/dev/null || true; unzip -p \"$APK\" assets/xposed_init 2>/dev/null || true; echo '-- libs --'; unzip -l \"$APK\" 'lib/*/*.so' 2>/dev/null | head -n 200 || true; if [ -n \"$P\" ]; then echo '-- mapped --'; grep -F \"$APK\" /proc/$P/maps 2>/dev/null | head -n 50 || true; fi; done",
                 30, 4 * 1024 * 1024));
+
+        append(out, "=== J. LSPosed 7869 resolved-entry evidence ===", RootShell.run(
+                "echo '-- scope/entry files --'; for D in /data/adb/lspd /data/adb/lsposed; do [ -d \"$D\" ] || continue; find \"$D\" -maxdepth 4 -type f 2>/dev/null | grep -iE 'scope|module' | head -n 300; done; " +
+                "echo '-- resolved entry mentions --'; for D in /data/adb/lspd/log /data/adb/lsposed/log /data/adb/lspd/logs /data/adb/lsposed/logs; do [ -d \"$D\" ] || continue; find \"$D\" -maxdepth 1 -type f 2>/dev/null | sort | tail -n 60 | while read F; do grep -aH -n -E 'com\\.yagay\\.desktopgridx|LegacyHookEntry|HookEntry|libdesktopgridx_minprobe\\.so|libdesktopgridx\\.so|com\\.chasers7ar\\.docksink|libdock_sink\\.so' \"$F\" 2>/dev/null | tail -n 800 || true; done; done",
+                25, 4 * 1024 * 1024));
+
+        append(out, "=== K. compatibility classification summary ===", RootShell.run(
+                "APK=$(pm path com.yagay.desktopgridx | head -n1 | cut -d: -f2); echo '-- DesktopGridX --'; unzip -p \"$APK\" META-INF/xposed/module.prop 2>/dev/null; echo modern_java=$(unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null | tr '\\n' ','); echo modern_native=$(unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null | tr '\\n' ','); echo legacy_java=$(unzip -p \"$APK\" assets/xposed_init 2>/dev/null | tr '\\n' ','); echo legacy_native=$(unzip -p \"$APK\" assets/native_init 2>/dev/null | tr '\\n' ','); " +
+                "D=$(pm path com.chasers7ar.docksink 2>/dev/null | head -n1 | cut -d: -f2); if [ -n \"$D\" ]; then echo '-- DockSink reference --'; unzip -p \"$D\" META-INF/xposed/module.prop 2>/dev/null; echo modern_java=$(unzip -p \"$D\" META-INF/xposed/java_init.list 2>/dev/null | tr '\\n' ','); echo modern_native=$(unzip -p \"$D\" META-INF/xposed/native_init.list 2>/dev/null | tr '\\n' ','); echo legacy_java=$(unzip -p \"$D\" assets/xposed_init 2>/dev/null | tr '\\n' ','); echo legacy_native=$(unzip -p \"$D\" assets/native_init 2>/dev/null | tr '\\n' ','); fi",
+                15, 1024 * 1024));
 
         return out.toString();
     }
