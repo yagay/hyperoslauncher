@@ -33,3 +33,17 @@ inline void runtime_hit(std::atomic<uint64_t> &counter,const char *stage){
     uint64_t n=counter.fetch_add(1)+1;
     if(n==1 || n==10 || n==100 || n==1000) write_runtime_status(stage);
 }
+
+int hook_x_status(){ runtime_hit(g_hit_getter_x,"getter-x-hit"); return hook_x(); }
+int hook_y_status(){ runtime_hit(g_hit_getter_y,"getter-y-hit"); return hook_y(); }
+int hook_hotseat_status(){ runtime_hit(g_hit_hotseat,"hotseat-hit"); return hook_hotseat(); }
+U128 hook_preference_get_int_status(const char *key,size_t len){
+    if(key){
+        const char *kx="pref_key_cell_x", *ky="pref_key_cell_y";
+        if(len==strlen(kx) && memcmp(key,kx,len)==0) runtime_hit(g_hit_pref_x,"pref-cell-x-hit");
+        else if(len==strlen(ky) && memcmp(key,ky,len)==0) runtime_hit(g_hit_pref_y,"pref-cell-y-hit");
+        else if((len==strlen("icon_size_scale") && memcmp(key,"icon_size_scale",len)==0) ||
+                (len==strlen("icon_size") && memcmp(key,"icon_size",len)==0)) runtime_hit(g_hit_icon,"icon-pref-hit");
+    }
+    return hook_preference_get_int(key,len);
+}
