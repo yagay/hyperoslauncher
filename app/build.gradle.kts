@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 21
-        versionName = "0.21.0"
+        versionCode = 22
+        versionName = "0.22.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {
@@ -30,6 +30,8 @@ android {
 }
 
 dependencies {
+    // Compile against the same Modern API generation declared in module.prop.
+    compileOnly("io.github.libxposed:api:102.0.0")
     // XZ is used only by the app-side .gnu_debugdata resolver.
     implementation("org.tukaani:xz:1.10")
 }
