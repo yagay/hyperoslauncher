@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">DesktopGridX</string>
+    <string name="module_desc">HyperOS 4 desktop grid, Hotseat and icon size controller for LSPosed API 102</string>
+</resources>
