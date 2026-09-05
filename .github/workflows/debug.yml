@@ -35,6 +35,18 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
+      - name: Verify Xposed native entry
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n1)
+          test -n "$APK"
+          unzip -l "$APK" | grep -F 'META-INF/xposed/native_init.list'
+          unzip -p "$APK" META-INF/xposed/native_init.list | grep -Fx 'libdesktopgridx.so'
+          unzip -p "$APK" lib/arm64-v8a/libdesktopgridx.so > /tmp/libdesktopgridx.so
+          readelf -Ws /tmp/libdesktopgridx.so | grep -E 'GLOBAL.*DEFAULT.*native_init$'
+          echo 'Native entry packaging/export verification passed.'
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
