@@ -1,37 +1,53 @@
     if(!found.safe){
-        g_hook_done.store(false); // allow a later explicit process restart/version retry, but never unsafe-hook now.
+        g_hook_done.store(false);
+        g_runtime_base.store(img.base);
+        g_runtime_method=found.method;
+        g_runtime_last_error="locator_unresolved";
+        write_runtime_status("locator-failed");
         LOGE("auto locator could not uniquely verify hook points; refusing unsafe hook");
         return -30;
     }
+    g_runtime_base.store(img.base);
+    g_runtime_method=found.method;
+    g_runtime_before_init.store(before_init);
+    g_runtime_last_error="none";
+    write_runtime_status("locator-ready");
+
     bool ok=true;
     bool up=false;
-    // Preferred backend: intercept the launcher's own PreferenceUtils::get_int before .init/.init_array
-    // whenever possible. Then GridConfig is born with our X/Y values and no getter detour is needed.
     if(found.prefGetInt && (g_cols.load()>0 || g_rows.load()>0 || g_icon_size.load()>0 || g_trace_prefs.load())){
-        up=install_one(found.prefGetInt,(void*)hook_preference_get_int,(void**)&orig_pref_get_int,&stub_pref_get_int,"PreferenceUtils::get_int");
+        up=install_one(found.prefGetInt,(void*)hook_preference_get_int_status,(void**)&orig_pref_get_int,&stub_pref_get_int,"PreferenceUtils::get_int");
         g_upstream_active.store(up);
+        g_state_pref_hook.store(up?1:-1);
+        if(!up) g_runtime_last_error="preference_hook_failed";
+        write_runtime_status(up?"preference-hook-installed":"preference-hook-failed");
         LOGI("upstream GridConfig preference backend=%s timing=%s", up?"active":"failed", before_init?"pre-init":"late");
     } else {
+        g_state_pref_hook.store(0);
+        write_runtime_status("preference-hook-not-required");
         LOGI("upstream GridConfig preference backend unavailable; getter fallback required");
     }
 
-    // If we installed the upstream hook before library constructors, all subsequent GridConfig reads
-    // go through it. Avoid redundant X/Y inline hooks in that best-case path. If the library was already
-    // initialized when the module arrived, keep getter hooks as a deterministic late-load fallback.
     const bool need_getter_fallback = !up || !before_init;
     if(need_getter_fallback){
         LOGI("workspace backend=getter-fallback reason=%s", !up?"upstream-unavailable":"late-install");
-        if(g_cols.load()>0) ok &= install_one(found.x,(void*)hook_x,(void**)&orig_x,&stub_x,"DeviceConfigs::get_cell_count_x");
-        if(g_rows.load()>0) ok &= install_one(found.y,(void*)hook_y,(void**)&orig_y,&stub_y,"DeviceConfigs::get_cell_count_y");
+        if(g_cols.load()>0){ bool hx=install_one(found.x,(void*)hook_x_status,(void**)&orig_x,&stub_x,"DeviceConfigs::get_cell_count_x"); g_state_x_hook.store(hx?1:-1); ok &= hx; }
+        if(g_rows.load()>0){ bool hy=install_one(found.y,(void*)hook_y_status,(void**)&orig_y,&stub_y,"DeviceConfigs::get_cell_count_y"); g_state_y_hook.store(hy?1:-1); ok &= hy; }
     } else {
         LOGI("workspace backend=upstream-preference-only (GridConfig-consistent)");
     }
-    // No equally-proven launcher preference source for Hotseat has been established yet. Keep the
-    // independently verified getter hook until a native source/key is proven by diagnostics.
-    if(g_hotseat.load()>0) ok &= install_one(found.hotseat,(void*)hook_hotseat,(void**)&orig_hotseat,&stub_hotseat,"DeviceConfigs::get_hotseat_max_count");
+    if(g_hotseat.load()>0){ bool hh=install_one(found.hotseat,(void*)hook_hotseat_status,(void**)&orig_hotseat,&stub_hotseat,"DeviceConfigs::get_hotseat_max_count"); g_state_hotseat_hook.store(hh?1:-1); ok &= hh; }
+
     char *records=shadowhook_get_records(SHADOWHOOK_RECORD_ITEM_ALL);
     if(records){ LOGI("shadowhook records:\n%s", records); free(records); }
-    if(!ok) g_hook_done.store(false);
+    if(!ok){
+        g_hook_done.store(false);
+        g_runtime_last_error="one_or_more_hooks_failed";
+        write_runtime_status("hook-install-failed");
+    } else {
+        g_runtime_last_error="none";
+        write_runtime_status("hook-install-complete");
+    }
     return ok?1:-50;
 }
 
@@ -47,15 +63,27 @@ void launcher_dl_pre(dl_phdr_info *info, size_t, void *){
 
 int install_impl(){
 #if !defined(__aarch64__)
+    g_runtime_last_error="unsupported_abi";
+    write_runtime_status("unsupported-abi");
     LOGE("unsupported ABI"); return -10;
 #endif
     read_config();
+    write_runtime_status("config-read");
     if(g_cols.load()==0 && g_rows.load()==0 && g_hotseat.load()==0 && g_icon_size.load()==0 && !g_trace_prefs.load()){
-        LOGI("all overrides disabled"); return 0;
+        LOGI("all overrides disabled");
+        write_runtime_status("all-overrides-disabled");
+        return 0;
     }
 
     int rc=shadowhook_init(SHADOWHOOK_MODE_SHARED,true);
-    if(rc!=0 && rc!=SHADOWHOOK_ERRNO_OK){ LOGE("shadowhook_init failed=%d %s",rc,shadowhook_to_errmsg(rc)); return -40; }
+    if(rc!=0 && rc!=SHADOWHOOK_ERRNO_OK){
+        g_state_shadowhook.store(-1);
+        g_runtime_last_error="shadowhook_init_failed";
+        write_runtime_status("shadowhook-init-failed");
+        LOGE("shadowhook_init failed=%d %s",rc,shadowhook_to_errmsg(rc)); return -40;
+    }
+    g_state_shadowhook.store(1);
+    write_runtime_status("shadowhook-ready");
     shadowhook_set_recordable(true);
 
     LoadedImage img; dl_iterate_phdr(phdr_cb,&img);
@@ -65,12 +93,15 @@ int install_impl(){
         int cr=shadowhook_register_dl_init_callback(launcher_dl_pre,nullptr,nullptr);
         if(cr!=0){
             g_callback_registered.store(false);
+            g_runtime_last_error="dl_init_callback_failed";
+            write_runtime_status("dl-init-callback-failed");
             LOGE("register dl_init callback failed=%d",cr);
             return -21;
         }
+        write_runtime_status("waiting-for-libapp-launcher");
         LOGI("libapp_launcher.so not loaded yet; PRE-init hook callback registered");
     }
-    return 2; // pending: hook will run when libapp_launcher.so is loaded.
+    return 2;
 }
 
 std::string analyze_elf_file(const char *path){
