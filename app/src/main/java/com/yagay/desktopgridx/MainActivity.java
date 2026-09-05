@@ -10,7 +10,7 @@ import java.io.InputStreamReader;
 public final class MainActivity extends Activity {
     private EditText columns, rows, hotseat, iconSize;
     private CheckBox tracePrefs;
-    private TextView status;
+    private TextView status, runtimeStatus;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -21,9 +21,8 @@ public final class MainActivity extends Activity {
         root.addView(text("DesktopGridX", 26));
         root.addView(text(
                 "HyperOS 4 / com.miui.home · LSPosed API 102\n" +
-                "v0.6 优先在 libapp_launcher.so 初始化前从桌面原生 GridConfig 配置链注入网格；" +
-                "cell 宽度/横向间距由 Launcher 根据列数原生重算。图标大小使用 Launcher 自己的 Settings.System: icon_size_scale，" +
-                "不做 View 缩放。修改后强制停止桌面或重启手机生效。", 15));
+                "v0.7 使用 Launcher 原生 GridConfig 配置链优先注入网格，并新增 Native 持久化运行状态、Hook 命中计数与一键自检。" +
+                "图标大小继续使用 Launcher 自己的 Settings.System: icon_size_scale。修改后强制停止桌面或重启手机生效。", 15));
 
         columns = numberField("桌面列数，例如 4 / 5 / 6 / 7");
         rows = numberField("桌面行数，例如 6 / 7 / 8 / 9");
@@ -37,15 +36,23 @@ public final class MainActivity extends Activity {
 
         Button save = new Button(this); save.setText("保存并应用"); save.setOnClickListener(v -> saveConfig()); root.addView(save);
         Button reset = new Button(this); reset.setText("恢复 DesktopGridX 修改"); reset.setOnClickListener(v -> resetConfig()); root.addView(reset);
-        Button restart = new Button(this); restart.setText("强制停止桌面"); restart.setOnClickListener(v -> runRoot("am force-stop com.miui.home")); root.addView(restart);
+        Button restart = new Button(this); restart.setText("强制停止桌面"); restart.setOnClickListener(v -> {
+            runRoot("am force-stop com.miui.home");
+            status.setText("已强制停止桌面；返回桌面后再点运行时自检");
+        }); root.addView(restart);
         Button locate = new Button(this); locate.setText("自动重新定位 Hook 点"); locate.setOnClickListener(v -> autoLocate(locate)); root.addView(locate);
+        Button selfCheck = new Button(this); selfCheck.setText("运行时自检"); selfCheck.setOnClickListener(v -> refreshRuntimeStatus()); root.addView(selfCheck);
         Button diagnostic = new Button(this); diagnostic.setText("一键导出诊断包"); diagnostic.setOnClickListener(v -> exportDiagnostic(diagnostic)); root.addView(diagnostic);
-        root.addView(text("诊断会通过 Root 收集 DesktopGridX / LSPosed / Launcher 日志、当前系统 icon_size_scale、Launcher 配置键、" +
+
+        runtimeStatus = text("运行时状态：尚未读取", 14);
+        root.addView(runtimeStatus);
+        root.addView(text("诊断会通过 Root 收集 DesktopGridX / LSPosed / Launcher 日志、runtime-status.conf、当前系统 icon_size_scale、Launcher 配置键、" +
                 ".gnu_debugdata 符号以及 ARM64 候选点，导出到 Downloads/DesktopGridX。", 13));
         status = text("配置路径：/data/adb/desktopgridx/config.conf", 14); root.addView(status);
 
         ScrollView scroll = new ScrollView(this); scroll.addView(root); setContentView(scroll);
         loadConfig();
+        refreshRuntimeStatus();
     }
 
     private TextView text(String s, float sp) { TextView v=new TextView(this); v.setText(s); v.setTextSize(sp); v.setPadding(0,12,0,20); return v; }
@@ -60,13 +67,14 @@ public final class MainActivity extends Activity {
         }
         String cfg="columns="+x+"\nrows="+y+"\nhotseat="+h+"\niconSize="+icon+"\ntracePrefs="+(tracePrefs.isChecked()?1:0)+"\n";
         String cmd="mkdir -p /data/adb/desktopgridx; printf '%s' "+shq(cfg)+" > /data/adb/desktopgridx/config.conf; " +
-                "chmod 0644 /data/adb/desktopgridx/config.conf; " +
+                "chmod 0644 /data/adb/desktopgridx/config.conf; rm -f /data/adb/desktopgridx/runtime-status.conf /data/adb/desktopgridx/runtime-status.conf.tmp; " +
                 "if [ "+icon+" -gt 0 ]; then " +
                 "if ! grep -q '^original_icon_size_scale=' /data/adb/desktopgridx/original.conf 2>/dev/null; then " +
                 "V=$(settings get system icon_size_scale 2>/dev/null); printf 'original_icon_size_scale=%s\\n' \"$V\" >> /data/adb/desktopgridx/original.conf; chmod 0600 /data/adb/desktopgridx/original.conf; fi; " +
                 "settings put system icon_size_scale "+icon+"; fi";
         boolean ok=runRoot(cmd);
         if(!ok){ status.setText("保存失败：请确认 Root / su 授权"); return; }
+        runtimeStatus.setText("运行时状态：已清空，等待 Launcher 下次启动重新生成");
         status.setText("配置已保存，正在解析当前 Launcher Hook 点…");
         new Thread(() -> {
             LauncherHookResolver.Outcome o=LauncherHookResolver.resolveAndPersist(this);
@@ -79,8 +87,9 @@ public final class MainActivity extends Activity {
                 "if [ -f /data/adb/desktopgridx/original.conf ]; then " +
                 "V=$(sed -n 's/^original_icon_size_scale=//p' /data/adb/desktopgridx/original.conf | head -n1); " +
                 "if [ -n \"$V\" ] && [ \"$V\" != null ]; then settings put system icon_size_scale \"$V\"; else settings delete system icon_size_scale; fi; fi; " +
-                "rm -f /data/adb/desktopgridx/config.conf /data/adb/desktopgridx/resolved.conf /data/adb/desktopgridx/original.conf";
+                "rm -f /data/adb/desktopgridx/config.conf /data/adb/desktopgridx/resolved.conf /data/adb/desktopgridx/original.conf /data/adb/desktopgridx/runtime-status.conf /data/adb/desktopgridx/runtime-status.conf.tmp";
         status.setText(runRoot(cmd) ? "已恢复 DesktopGridX 修改；强制停止桌面或重启后生效" : "恢复失败");
+        runtimeStatus.setText("运行时状态：已清除");
         columns.setText(""); rows.setText(""); hotseat.setText(""); iconSize.setText(""); tracePrefs.setChecked(false);
     }
 
@@ -100,6 +109,31 @@ public final class MainActivity extends Activity {
     }
     private String zeroEmpty(String s){ return "0".equals(s) ? "" : s; }
 
+    private void refreshRuntimeStatus() {
+        new Thread(() -> {
+            String raw=runRootOutput("if [ -f /data/adb/desktopgridx/runtime-status.conf ]; then cat /data/adb/desktopgridx/runtime-status.conf; else echo missing=1; fi");
+            String summary=formatRuntime(raw);
+            runOnUiThread(() -> runtimeStatus.setText(summary));
+        },"DesktopGridX-SelfCheck").start();
+    }
+
+    private String formatRuntime(String raw){
+        if(raw==null || raw.trim().isEmpty() || raw.contains("missing=1")) return "运行时状态：未生成。保存配置后强制停止桌面，再返回桌面启动一次。";
+        String stage=find(raw,"stage"), nativeLoaded=find(raw,"native_loaded"), sh=find(raw,"shadowhook_init"), pref=find(raw,"preference_hook_installed");
+        String px=find(raw,"pref_cell_x_hits"), py=find(raw,"pref_cell_y_hits"), gx=find(raw,"getter_x_hits"), gy=find(raw,"getter_y_hits"), hs=find(raw,"hotseat_hits");
+        String method=find(raw,"resolver"), err=find(raw,"last_error"), pid=find(raw,"pid"), base=find(raw,"launcher_base");
+        boolean hit=positive(px)||positive(py)||positive(gx)||positive(gy)||positive(hs);
+        return "运行时自检："+("1".equals(nativeLoaded)?"✓ Native 已加载":"✕ Native 未确认")+"\n"+
+                "PID="+pid+"  base="+base+"\n"+
+                "stage="+stage+"  resolver="+method+"\n"+
+                "ShadowHook="+sh+"  PreferenceHook="+pref+"\n"+
+                "命中：prefX="+px+" prefY="+py+" getterX="+gx+" getterY="+gy+" hotseat="+hs+"\n"+
+                "实际调用验证："+(hit?"✓ 已命中":"尚未命中/尚未触发")+"\n"+
+                "last_error="+err;
+    }
+    private static boolean positive(String s){ try{return Long.parseLong(s)>0;}catch(Exception e){return false;} }
+    private static String find(String raw,String key){ for(String l:raw.split("\\R")){int p=l.indexOf('=');if(p>0&&l.substring(0,p).equals(key))return l.substring(p+1);}return "?"; }
+
     private void autoLocate(Button button) {
         button.setEnabled(false); status.setText("正在解析当前桌面的 .gnu_debugdata / ELF 符号…");
         new Thread(() -> {
@@ -114,5 +148,6 @@ public final class MainActivity extends Activity {
         }));
     }
     private boolean runRoot(String command) { try { Process p=new ProcessBuilder("su","-c",command).start(); return p.waitFor()==0; } catch(Exception e){ return false; } }
+    private String runRootOutput(String command){ try{ Process p=new ProcessBuilder("su","-c",command).redirectErrorStream(true).start(); BufferedReader r=new BufferedReader(new InputStreamReader(p.getInputStream())); StringBuilder b=new StringBuilder(); String l; while((l=r.readLine())!=null)b.append(l).append('\n'); p.waitFor(); return b.toString(); }catch(Exception e){return "error="+e;} }
     private static String shq(String s){ return "'"+s.replace("'","'\\''")+"'"; }
 }
