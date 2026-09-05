@@ -11,8 +11,12 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 final class GnuDebugDataResolver {
+    static final long EXPECTED_XY_DISTANCE = 0xACL;
+
     static final class Result {
         boolean foundDebugData;
+        boolean symbolsResolved;
+        boolean structuralVerified;
         boolean success;
         long x, y, hotseat, preferenceGetInt, preferencePutInt, getScreenGrid;
         long iconSizeProviderQualified, iconSizeProviderCall, computeCellWidth;
@@ -51,22 +55,25 @@ final class GnuDebugDataResolver {
                     "PreferenceUtils7get_int",
                     "PreferenceUtils7put_int",
                     "settings_handler15get_screen_grid",
-                    "icon_size_providerNtB2_16IconSizeProvider22is_parameter_qualified",
-                    "icon_size_provider16IconSizeProviderINtNtNtNtB1Z_9std_types5boxed7private4RBoxuEIB4H_B2Y_EE4call",
+                    "IconSizeProvider22is_parameter_qualified",
                     "DeviceConfigs36compute_cell_width_px_by_orientation"));
             for (Map.Entry<String,Long> e : matches.entrySet()) {
                 out.append("symbol[").append(e.getKey()).append("]=0x").append(Long.toHexString(e.getValue())).append('\n');
             }
-            r.x = findBySuffix(matches, "get_cell_count_x");
-            r.y = findBySuffix(matches, "get_cell_count_y");
-            r.hotseat = findBySuffix(matches, "get_hotseat_max_count");
-            r.preferenceGetInt = findBySuffix(matches, "PreferenceUtils7get_int");
-            r.preferencePutInt = findBySuffix(matches, "PreferenceUtils7put_int");
-            r.getScreenGrid = findBySuffix(matches, "settings_handler15get_screen_grid");
-            r.iconSizeProviderQualified = findBySuffix(matches, "IconSizeProvider22is_parameter_qualified");
-            r.iconSizeProviderCall = findBySuffix(matches, "IconSizeProviderINtNtNtNtB1Z_9std_types5boxed7private4RBoxuEIB4H_B2Y_EE4call");
-            r.computeCellWidth = findBySuffix(matches, "DeviceConfigs36compute_cell_width_px_by_orientation");
-            r.success = r.x > 0 && r.y > 0 && r.hotseat > 0;
+
+            r.x = findUniqueEnding(matches, "DeviceConfigs16get_cell_count_x");
+            r.y = findUniqueEnding(matches, "DeviceConfigs16get_cell_count_y");
+            r.hotseat = findUniqueEnding(matches, "DeviceConfigs21get_hotseat_max_count");
+            r.preferenceGetInt = findUniqueEnding(matches, "PreferenceUtils7get_int");
+            r.preferencePutInt = findUniqueEnding(matches, "PreferenceUtils7put_int");
+            r.getScreenGrid = findUniqueEnding(matches, "settings_handler15get_screen_grid");
+            r.iconSizeProviderQualified = findUniqueContaining(matches, "IconSizeProvider22is_parameter_qualified");
+            r.computeCellWidth = findUniqueEnding(matches, "DeviceConfigs36compute_cell_width_px_by_orientation");
+
+            r.symbolsResolved = r.x > 0 && r.y > 0 && r.hotseat > 0;
+            r.structuralVerified = r.symbolsResolved && r.y > r.x && (r.y - r.x) == EXPECTED_XY_DISTANCE;
+            r.success = r.structuralVerified;
+
             out.append("resolved_x=0x").append(Long.toHexString(r.x)).append('\n')
                     .append("resolved_y=0x").append(Long.toHexString(r.y)).append('\n')
                     .append("resolved_hotseat=0x").append(Long.toHexString(r.hotseat)).append('\n')
@@ -74,9 +81,10 @@ final class GnuDebugDataResolver {
                     .append("resolved_preference_put_int=0x").append(Long.toHexString(r.preferencePutInt)).append('\n')
                     .append("resolved_get_screen_grid=0x").append(Long.toHexString(r.getScreenGrid)).append('\n')
                     .append("resolved_icon_size_provider_qualified=0x").append(Long.toHexString(r.iconSizeProviderQualified)).append('\n')
-                    .append("resolved_icon_size_provider_call=0x").append(Long.toHexString(r.iconSizeProviderCall)).append('\n')
                     .append("resolved_compute_cell_width=0x").append(Long.toHexString(r.computeCellWidth)).append('\n')
                     .append("xy_distance=0x").append(Long.toHexString(r.y-r.x)).append('\n')
+                    .append("symbols_resolved=").append(r.symbolsResolved).append('\n')
+                    .append("structural_verified=").append(r.structuralVerified).append('\n')
                     .append("success=").append(r.success).append('\n');
         } catch (Throwable t) {
             r.error = t.toString();
@@ -98,17 +106,23 @@ final class GnuDebugDataResolver {
         }
     }
 
-    private static long findBySuffix(Map<String,Long> m, String suffix) {
+    private static long findUniqueEnding(Map<String,Long> m, String suffix) {
         long v = 0; int count = 0;
         for (Map.Entry<String,Long> e : m.entrySet()) {
-            if (e.getKey().contains(suffix)) { v=e.getValue(); count++; }
+            if (e.getKey().endsWith(suffix)) { v=e.getValue(); count++; }
         }
         return count == 1 ? v : 0;
     }
 
-    private static final class Section {
-        String name; long off,size,entsize; int type,link;
+    private static long findUniqueContaining(Map<String,Long> m, String token) {
+        long v = 0; int count = 0;
+        for (Map.Entry<String,Long> e : m.entrySet()) {
+            if (e.getKey().contains(token)) { v=e.getValue(); count++; }
+        }
+        return count == 1 ? v : 0;
     }
+
+    private static final class Section { String name; long off,size,entsize; int type,link; }
 
     private static final class ElfImage {
         final byte[] b;
@@ -128,9 +142,10 @@ final class GnuDebugDataResolver {
             for (int i=0;i<shnum;i++) {
                 int p=(int)(shoff+(long)i*shentsize);
                 names[i]=bb.getInt(p); types[i]=bb.getInt(p+4); offs[i]=bb.getLong(p+24); sizes[i]=bb.getLong(p+32); links[i]=bb.getInt(p+40); ents[i]=bb.getLong(p+56);
-                if (types[i] != 8) range(offs[i],sizes[i]); // SHT_NOBITS has virtual size but no file bytes
+                if (types[i] != 8) range(offs[i],sizes[i]);
             }
             if (shstrndx<0 || shstrndx>=shnum) throw new IOException("bad shstrndx");
+            if (types[shstrndx] == 8) throw new IOException("shstrtab cannot be NOBITS");
             byte[] shstr = Arrays.copyOfRange(b,(int)offs[shstrndx],(int)(offs[shstrndx]+sizes[shstrndx]));
             for (int i=0;i<shnum;i++) {
                 Section s=new Section(); s.name=cstr(shstr,names[i]); s.off=offs[i]; s.size=sizes[i]; s.entsize=ents[i]; s.type=types[i]; s.link=links[i]; sections.add(s);
@@ -143,12 +158,16 @@ final class GnuDebugDataResolver {
         Map<String,Long> findSymbols(List<String> needles) throws IOException {
             LinkedHashMap<String,Long> out=new LinkedHashMap<>();
             for (Section sym:sections) {
-                if (sym.type!=2 || sym.entsize<24 || sym.link<0 || sym.link>=sections.size()) continue; // SHT_SYMTAB
+                if (sym.type!=2 || sym.entsize<24 || sym.link<0 || sym.link>=sections.size()) continue;
                 Section str=sections.get(sym.link);
+                if (str.type==8) continue;
+                range(str.off,str.size); range(sym.off,sym.size);
                 byte[] st=Arrays.copyOfRange(b,(int)str.off,(int)(str.off+str.size));
                 long count=sym.size/sym.entsize;
                 for (long i=0;i<count;i++) {
-                    int p=(int)(sym.off+i*sym.entsize);
+                    long pp=sym.off+i*sym.entsize;
+                    if (pp<0 || pp+24>b.length) break;
+                    int p=(int)pp;
                     int nameOff=bb.getInt(p);
                     long value=bb.getLong(p+8);
                     if (nameOff<=0 || nameOff>=st.length || value==0) continue;
