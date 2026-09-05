@@ -35,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify LSPosed 7869 HYOS entry contract
+      - name: Verify LSPosed 7869 native-only contract
         shell: bash
         run: |
           set -euo pipefail
@@ -43,7 +43,6 @@ jobs:
           test -n "$APK"
 
           for F in \
-            META-INF/xposed/java_init.list \
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
@@ -52,57 +51,50 @@ jobs:
             unzip -l "$APK" | grep -F "$F"
           done
 
-          unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           test "$(unzip -p "$APK" META-INF/xposed/native_init.list)" = 'libdesktopgridx_hyos.so'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
 
-          if unzip -l "$APK" | grep -Fq 'assets/native_init'; then
-            echo 'legacy assets/native_init must not be packaged' >&2
-            exit 1
-          fi
-          if unzip -l "$APK" | grep -Fq 'assets/xposed_init'; then
-            echo 'legacy assets/xposed_init must not be packaged' >&2
+          for OLD in assets/native_init assets/xposed_init META-INF/xposed/java_init.list lib/arm64-v8a/libshadowhook.so lib/arm64-v8a/libdesktopgridx_minprobe.so; do
+            if unzip -l "$APK" | grep -Fq "$OLD"; then
+              echo "obsolete entry unexpectedly packaged: $OLD" >&2
+              exit 1
+            fi
+          done
+
+          unzip -p "$APK" lib/arm64-v8a/libdesktopgridx_hyos.so > /tmp/hyos.so
+          echo '=== dynamic exports ==='
+          readelf --dyn-syms -W /tmp/hyos.so
+          EXPORTS=$(readelf --dyn-syms -W /tmp/hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $7!="UND" {n=$8; sub(/@@.*/,"",n); if(n!="") print n}' | sort -u)
+          test "$EXPORTS" = 'native_init'
+
+          echo '=== DT_NEEDED ==='
+          readelf -d /tmp/hyos.so | grep NEEDED || true
+          if readelf -d /tmp/hyos.so | grep -E 'libshadowhook|libc\+\+_shared'; then
+            echo 'HYOS entry has forbidden runtime dependency' >&2
             exit 1
           fi
 
-          unzip -p "$APK" lib/arm64-v8a/libdesktopgridx_hyos.so > /tmp/libdesktopgridx_hyos.so
-          readelf -Ws /tmp/libdesktopgridx_hyos.so | grep -E 'GLOBAL.*DEFAULT.*native_init$'
-          test "$(readelf -Ws /tmp/libdesktopgridx_hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $8!="" {print $8}' | grep -v '^native_init$' | wc -l)" -eq 0
-
-          echo '=== HYOS DT_NEEDED ==='
-          readelf -d /tmp/libdesktopgridx_hyos.so | grep NEEDED || true
-          if readelf -d /tmp/libdesktopgridx_hyos.so | grep -E 'libshadowhook|libc\+\+_shared'; then
-            echo 'HYOS entry must be self-contained and not depend on ShadowHook/libc++_shared' >&2
-            exit 1
-          fi
-
-          echo '=== HYOS LOAD alignment ==='
-          readelf -l /tmp/libdesktopgridx_hyos.so | grep LOAD
           python3 - "$APK" <<'PY'
-          import sys, zipfile, subprocess, re
+          import subprocess, sys, zipfile
           apk=sys.argv[1]
           with zipfile.ZipFile(apk) as z:
-              names=set(z.namelist())
               info=z.getinfo('lib/arm64-v8a/libdesktopgridx_hyos.so')
-              print('libdesktopgridx_hyos.so compress_type=', info.compress_type)
+              print('hyos compress_type=', info.compress_type)
               if info.compress_type != zipfile.ZIP_STORED:
-                  raise SystemExit('HYOS entry is not ZIP_STORED/direct-map compatible')
-              if 'assets/native_init' in names or 'assets/xposed_init' in names:
-                  raise SystemExit('legacy Xposed entry unexpectedly packaged')
-          out=subprocess.check_output(['readelf','-l','/tmp/libdesktopgridx_hyos.so'], text=True)
+                  raise SystemExit('HYOS entry must be ZIP_STORED for direct mapping')
+          out=subprocess.check_output(['readelf','-lW','/tmp/hyos.so'],text=True)
           aligns=[]
           for line in out.splitlines():
               if line.lstrip().startswith('LOAD'):
-                  parts=line.split()
-                  if parts:
-                      try: aligns.append(int(parts[-1],16))
-                      except ValueError: pass
-          if not aligns or min(aligns) < 0x4000:
-              raise SystemExit(f'HYOS LOAD segment alignment is not 16KiB: {aligns}')
-          print('LSPosed 7869 HYOS entry verification passed.')
+                  try: aligns.append(int(line.split()[-1],16))
+                  except ValueError: pass
+          print('LOAD aligns=',aligns)
+          if not aligns or min(aligns)<0x4000:
+              raise SystemExit('HYOS LOAD alignment is below 16 KiB')
+          print('LSPosed 7869 native-only verification passed.')
           PY
 
       - name: Upload debug APK
