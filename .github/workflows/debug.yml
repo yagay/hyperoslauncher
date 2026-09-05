@@ -35,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify LSPosed 7869 native-only contract
+      - name: Verify LSPosed 7869 Modern + HYOS contract
         shell: bash
         run: |
           set -euo pipefail
@@ -43,6 +43,7 @@ jobs:
           test -n "$APK"
 
           for F in \
+            META-INF/xposed/java_init.list \
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
@@ -51,18 +52,25 @@ jobs:
             unzip -l "$APK" | grep -F "$F"
           done
 
+          unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           test "$(unzip -p "$APK" META-INF/xposed/native_init.list)" = 'libdesktopgridx_hyos.so'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
 
-          for OLD in assets/native_init assets/xposed_init META-INF/xposed/java_init.list lib/arm64-v8a/libshadowhook.so lib/arm64-v8a/libdesktopgridx_minprobe.so; do
+          for OLD in assets/native_init assets/xposed_init lib/arm64-v8a/libshadowhook.so lib/arm64-v8a/libdesktopgridx_minprobe.so; do
             if unzip -l "$APK" | grep -Fq "$OLD"; then
               echo "obsolete entry unexpectedly packaged: $OLD" >&2
               exit 1
             fi
           done
+
+          # API classes must stay compileOnly and must not be bundled into the APK.
+          if unzip -l "$APK" | grep -Eq 'io/github/libxposed/api|XposedModule.class'; then
+            echo 'libxposed API classes were packaged into the module APK' >&2
+            exit 1
+          fi
 
           unzip -p "$APK" lib/arm64-v8a/libdesktopgridx_hyos.so > /tmp/hyos.so
           echo '=== dynamic exports ==='
@@ -94,7 +102,7 @@ jobs:
           print('LOAD aligns=',aligns)
           if not aligns or min(aligns)<0x4000:
               raise SystemExit('HYOS LOAD alignment is below 16 KiB')
-          print('LSPosed 7869 native-only verification passed.')
+          print('LSPosed 7869 Modern registration + HYOS native verification passed.')
           PY
 
       - name: Upload debug APK
