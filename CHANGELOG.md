@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.0
+
+- Added loader-compatibility fallback: Java `onModuleLoaded()` now immediately loads `libdesktopgridx.so` without relying on Java process-name matching.
+- Kept `META-INF/xposed/native_init.list` as the primary Modern Xposed native entry path.
+- Native side remains responsible for detecting/waiting for `libapp_launcher.so`, improving compatibility with HyperOS 4 `hyos_spawner`.
+- Changed JNI/native packaging to non-legacy mode so `libdesktopgridx.so` is stored uncompressed (`ZIP_STORED`) and can be directly mapped from the APK.
+- Added `libshadowhook.so` pick-first handling to avoid duplicate JNI packaging ambiguity.
+- Extended GitHub Actions verification to require all Xposed metadata files, the arm64 module library, exported `native_init`, exact Java/native/scope entries and uncompressed native library packaging.
+- Reduced diagnostic logcat collection to a bounded recent-record window to prevent timeouts.
+- Restricted LSPosed diagnostic collection to module/verbose/logcat files and added focused loader-error matching.
+- Diagnostic package now prints Java/native entry lists, module properties, scope list and native library ZIP entry metadata.
+- Updated in-app loader architecture description and bumped app version to 0.10.0 / versionCode 10.
+
 ## 0.9.0
 
 - Added Modern LSPosed native entry through `META-INF/xposed/native_init.list` and exported `native_init`.
