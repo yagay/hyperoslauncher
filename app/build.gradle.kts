@@ -20,9 +20,9 @@ android {
     buildFeatures { prefab = true }
     packaging {
         jniLibs {
-            // Keep the native module directly loadable from the APK while Android also extracts
-            // a filesystem copy (android:extractNativeLibs=true) for HYOS/legacy loader compatibility.
-            useLegacyPackaging = false
+            // AGP 9.2 requires native extraction/legacy JNI packaging to be controlled here,
+            // not with android:extractNativeLibs in AndroidManifest.xml.
+            useLegacyPackaging = true
             pickFirsts += "lib/arm64-v8a/libshadowhook.so"
         }
         resources { merges += "META-INF/xposed/*" }
