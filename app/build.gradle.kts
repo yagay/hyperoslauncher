@@ -8,8 +8,8 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 23
-        versionName = "0.23.0"
+        versionCode = 24
+        versionName = "0.24.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {
@@ -30,8 +30,11 @@ android {
 }
 
 dependencies {
-    // Compile against the same Modern API generation declared in module.prop.
+    // Primary module contract: Modern libxposed API 102.
     compileOnly("io.github.libxposed:api:102.0.0")
+    // Compatibility-only legacy registration marker for LSPosed IT 7869 HYOS.
+    // This API is compileOnly and never changes module.prop (which stays 102/102).
+    compileOnly("de.robv.android.xposed:api:82")
     // XZ is used only by the app-side .gnu_debugdata resolver.
     implementation("org.tukaani:xz:1.10")
 }
