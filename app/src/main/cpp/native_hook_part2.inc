@@ -76,7 +76,6 @@ ScanResult resolve_runtime(const LoadedImage &img){
         r.hsCandidates.insert(r.hsCandidates.end(),hs.begin(),hs.end());
         r.prefCandidates.insert(r.prefCandidates.end(),pref.begin(),pref.end());
     }
-    // Highest-confidence runtime hint: values resolved from .gnu_debugdata by the module app.
     uintptr_t hx=g_hint_x.load(), hy=g_hint_y.load(), hh=g_hint_hotseat.load(), hp=g_hint_pref_get_int.load();
     if(hx && hy && hh &&
        runtime_match_safe(img,img.base+hx,PAT_XY,std::size(PAT_XY)) &&
@@ -89,7 +88,6 @@ ScanResult resolve_runtime(const LoadedImage &img){
         return r;
     }
 
-    // Signature+structural relation is the automatic fallback when no verified symbol hint is available.
     std::vector<std::pair<uintptr_t,uintptr_t>> pairs;
     for(auto a:r.xyCandidates) for(auto b:r.xyCandidates) if(b>a && b-a==XY_DISTANCE) pairs.emplace_back(a,b);
     if(pairs.size()==1 && r.hsCandidates.size()==1){
@@ -98,7 +96,6 @@ ScanResult resolve_runtime(const LoadedImage &img){
         r.safe=true; r.method=r.prefGetInt?"runtime-pattern+upstream-preference":"runtime-pattern+getter-fallback";
         return r;
     }
-    // Known-build database: every RVA is verified against the live executable mapping before use.
     for(const auto &k:KNOWN_BUILDS){
         uintptr_t ax=img.base+k.x, ay=img.base+k.y, ah=img.base+k.hotseat, ap=img.base+k.prefGetInt;
         if(runtime_match_safe(img,ax,PAT_XY,std::size(PAT_XY)) &&
@@ -141,6 +138,8 @@ bool install_one(uintptr_t addr, void *proxy, void **orig, void **stub, const ch
 
 std::atomic<bool> g_hook_done{false};
 std::atomic<bool> g_callback_registered{false};
+
+#include "runtime_status.inc"
 
 int hook_loaded_image(const LoadedImage &img, bool before_init){
     if(g_hook_done.exchange(true)){ LOGI("hook already installed/attempted, skip duplicate"); return 1; }
