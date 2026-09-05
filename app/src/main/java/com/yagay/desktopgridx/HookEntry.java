@@ -13,37 +13,60 @@ public final class HookEntry extends XposedModule {
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
         final String process = param.getProcessName();
-        log(Log.INFO, TAG, "module loaded, process=" + process);
-        // Native-only interception does not need the app ClassLoader. Installing here gives us the
-        // earliest lifecycle point in API 102 and maximizes the chance that ShadowHook can observe
-        // libapp_launcher.so before its .init/.init_array executes.
+        log(Log.INFO, TAG, "DGX_ENTRY_MODULE_LOADED process=" + process + " systemServer=" + param.isSystemServer());
+        JavaRuntimeStatus.mark("stage", "onModuleLoaded");
+        JavaRuntimeStatus.mark("process", process);
+        JavaRuntimeStatus.mark("system_server", param.isSystemServer() ? 1 : 0);
+        JavaRuntimeStatus.mark("java_entry", 1);
+
         if (!param.isSystemServer() && "com.miui.home".equals(process)) {
             attemptedEarly = true;
+            JavaRuntimeStatus.mark("target_process_match", 1);
             installNative("onModuleLoaded");
+        } else {
+            JavaRuntimeStatus.mark("target_process_match", 0);
         }
     }
 
     @Override
     public void onPackageReady(PackageReadyParam param) {
+        log(Log.INFO, TAG, "DGX_ENTRY_PACKAGE_READY package=" + param.getPackageName() + " first=" + param.isFirstPackage());
+        JavaRuntimeStatus.mark("package_ready_seen", 1);
+        JavaRuntimeStatus.mark("package_name", param.getPackageName());
+        JavaRuntimeStatus.mark("package_first", param.isFirstPackage() ? 1 : 0);
         if (!param.isFirstPackage() || !"com.miui.home".equals(param.getPackageName()) || installed) return;
-        // Compensation path: native library loading can fail unusually early on some ROM/module
-        // environments. Retry once the package ClassLoader is ready instead of permanently disabling.
         log(Log.INFO, TAG, "package ready; earlyAttempt=" + attemptedEarly + ", retrying native install");
         installNative("onPackageReady");
     }
 
     private synchronized void installNative(String stage) {
         if (installed) return;
+        JavaRuntimeStatus.mark("stage", stage + ":before_loadLibrary");
+        JavaRuntimeStatus.mark("native_load_attempted", 1);
+        log(Log.INFO, TAG, "DGX_BEFORE_LOAD_LIBRARY stage=" + stage);
         try {
             System.loadLibrary("desktopgridx");
+            JavaRuntimeStatus.mark("native_library_loaded", 1);
+            JavaRuntimeStatus.mark("stage", stage + ":after_loadLibrary");
+            log(Log.INFO, TAG, "DGX_AFTER_LOAD_LIBRARY stage=" + stage);
+
+            JavaRuntimeStatus.mark("native_install_attempted", 1);
+            JavaRuntimeStatus.mark("stage", stage + ":before_native_install");
+            log(Log.INFO, TAG, "DGX_BEFORE_NATIVE_INSTALL stage=" + stage);
             int result = NativeBridge.install();
-            // 0 = no overrides, 1 = installed, 2 = waiting for target SO. All are successful setup.
+            JavaRuntimeStatus.mark("native_install_result", result);
+            JavaRuntimeStatus.mark("stage", stage + ":after_native_install");
+            log(Log.INFO, TAG, "DGX_AFTER_NATIVE_INSTALL stage=" + stage + " result=" + result);
+
             installed = result >= 0;
+            JavaRuntimeStatus.mark("installed", installed ? 1 : 0);
             log(result >= 0 ? Log.INFO : Log.ERROR, TAG,
                     "native install stage=" + stage + " result=" + result + " installed=" + installed);
         } catch (Throwable t) {
             installed = false;
-            log(Log.ERROR, TAG, "native install failed stage=" + stage + ": " + Log.getStackTraceString(t));
+            JavaRuntimeStatus.mark("installed", 0);
+            JavaRuntimeStatus.markError(stage + ":native_failure", t);
+            log(Log.ERROR, TAG, "DGX_NATIVE_FAILURE stage=" + stage + ": " + Log.getStackTraceString(t));
         }
     }
 }
