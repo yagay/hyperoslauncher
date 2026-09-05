@@ -33,9 +33,10 @@ final class DiagnosticCollector {
 
                 write(new File(dir,"00-summary.txt"), summary(context));
                 write(new File(dir,"01-root-device.txt"), root(
-                        "echo '=== id ==='; id; echo '=== su ==='; (su -v 2>&1 || true); " +
-                        "echo '=== kernel ==='; uname -a; echo '=== selinux ==='; getenforce 2>/dev/null; cat /sys/fs/selinux/enforce 2>/dev/null; " +
-                        "echo '=== root managers ==='; (magisk -v 2>&1 || true); (ksud --version 2>&1 || true); echo '=== build ==='; getprop ro.build.fingerprint; getprop ro.build.version.release; getprop ro.build.version.sdk"));
+                        "echo '=== id ==='; id; echo '=== su ==='; (su -v 2>&1 || true); echo '=== kernel ==='; uname -a; " +
+                        "echo '=== selinux ==='; getenforce 2>/dev/null; cat /sys/fs/selinux/enforce 2>/dev/null; " +
+                        "echo '=== root managers ==='; (magisk -v 2>&1 || true); (ksud --version 2>&1 || true); " +
+                        "echo '=== build ==='; getprop ro.build.fingerprint; getprop ro.build.version.release; getprop ro.build.version.sdk"));
 
                 write(new File(dir,"02-config.txt"), root(
                         "echo '=== config ==='; cat /data/adb/desktopgridx/config.conf 2>&1; " +
@@ -44,9 +45,11 @@ final class DiagnosticCollector {
                         "echo '=== module dir ==='; ls -laZ /data/adb/desktopgridx 2>&1"));
 
                 write(new File(dir,"03-runtime-status.txt"), root(
-                        "echo '=== persistent runtime status ==='; cat /data/adb/desktopgridx/runtime-status.conf 2>&1; " +
-                        "echo '=== launcher pid ==='; pidof com.miui.home; P=$(pidof com.miui.home | awk '{print $1}'); " +
-                        "if [ -n \"$P\" ]; then echo '=== relevant live mappings ==='; grep -E 'desktopgridx|shadowhook|libapp_launcher|base.apk' /proc/$P/maps 2>/dev/null || true; fi"));
+                        "echo '=== JAVA ENTRY STATUS ==='; J=''; for F in /data/user_de/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/user/0/com.miui.home/cache/desktopgridx-java-runtime.conf /data/data/com.miui.home/cache/desktopgridx-java-runtime.conf; do " +
+                        "if [ -f \"$F\" ]; then echo path=$F; cat \"$F\"; J=1; break; fi; done; [ -n \"$J\" ] || echo java_status_missing=1; " +
+                        "echo '=== NATIVE RUNTIME STATUS ==='; cat /data/adb/desktopgridx/runtime-status.conf 2>&1; " +
+                        "echo '=== launcher pid ==='; P=$(pidof com.miui.home | awk '{print $1}'); echo pid=$P; " +
+                        "if [ -n \"$P\" ]; then echo '=== relevant live mappings ==='; grep -E 'desktopgridx|shadowhook|libapp_launcher|base.apk|zygisk_lsposed' /proc/$P/maps 2>/dev/null || true; fi"));
 
                 String paths = root("pm path com.miui.home 2>&1");
                 write(new File(dir,"04-launcher-paths.txt"), paths);
@@ -89,19 +92,23 @@ final class DiagnosticCollector {
                         "echo '=== maps ==='; cat /proc/$P/maps; echo '=== status ==='; cat /proc/$P/status; fi"));
 
                 write(new File(dir,"09-logcat-related.txt"),root(
-                        "logcat -d -b all -v threadtime 2>/dev/null | grep -iE 'DesktopGridX|LSPosed|libxposed|Xposed|ShadowHook|shadowhook|com\\.miui\\.home|libapp_launcher|hyos_spawner' | tail -n 12000 || true"));
+                        "logcat -d -b all -v threadtime 2>/dev/null | grep -iE 'DGX_|DesktopGridX|com\\.yagay\\.desktopgridx|HookEntry|ClassNotFound|NoClassDefFound|UnsatisfiedLinkError|LSPosed|libxposed|Xposed|ShadowHook|shadowhook|com\\.miui\\.home|libapp_launcher|hyos_spawner' | tail -n 16000 || true"));
 
                 write(new File(dir,"10-lsposed-logs.txt"),root(
-                        "for D in /data/adb/lspd/log /data/adb/lsposed/log /data/adb/lspd/logs /data/adb/lsposed/logs; do " +
-                        "if [ -d \"$D\" ]; then echo \"=== $D ===\"; find \"$D\" -type f 2>/dev/null | sort | tail -n 20 | while read F; do echo \"--- $F ---\"; tail -n 3000 \"$F\" 2>/dev/null; done; fi; done"));
+                        "for D in /data/adb/lspd/log /data/adb/lsposed/log /data/adb/lspd/logs /data/adb/lsposed/logs; do if [ -d \"$D\" ]; then " +
+                        "echo \"=== $D ===\"; find \"$D\" -type f 2>/dev/null | sort | tail -n 30 | while read F; do echo \"--- $F ---\"; tail -n 4000 \"$F\" 2>/dev/null; done; fi; done"));
+
+                write(new File(dir,"10b-lsposed-entry-focus.txt"),root(
+                        "for D in /data/adb/lspd/log /data/adb/lsposed/log /data/adb/lspd/logs /data/adb/lsposed/logs; do if [ -d \"$D\" ]; then " +
+                        "find \"$D\" -type f 2>/dev/null | sort | tail -n 50 | while read F; do grep -H -n -iE 'DesktopGridX|com\\.yagay\\.desktopgridx|HookEntry|DGX_|ClassNotFound|NoClassDefFound|UnsatisfiedLinkError|loadLibrary|libdesktopgridx' \"$F\" 2>/dev/null || true; done; fi; done"));
 
                 write(new File(dir,"11-kernel-selinux.txt"),root(
-                        "dmesg 2>/dev/null | grep -iE 'DesktopGridX|LSPosed|xposed|miui.home|launcher|app_launcher|shadowhook|avc:.*denied' | tail -n 5000 || true"));
+                        "dmesg 2>/dev/null | grep -iE 'DesktopGridX|desktopgridx|LSPosed|xposed|miui.home|launcher|app_launcher|shadowhook|avc:.*denied' | tail -n 6000 || true"));
 
                 write(new File(dir,"12-launcher-preferences.txt"),root(
                         "for D in /data/user/0/com.miui.home /data/user_de/0/com.miui.home /data/data/com.miui.home; do if [ -d \"$D\" ]; then " +
                         "echo \"=== $D ===\"; find \"$D\" -maxdepth 4 -type f \\( -name '*.xml' -o -name '*.json' -o -name '*.conf' \\) -print 2>/dev/null; " +
-                        "grep -R -n -a -E 'pref_key_cell_x|pref_key_cell_y|icon_size|hotseat|folder|grid' \"$D\" 2>/dev/null | head -n 3000; fi; done"));
+                        "grep -R -n -a -E 'desktopgridx|pref_key_cell_x|pref_key_cell_y|icon_size|hotseat|folder|grid' \"$D\" 2>/dev/null | head -n 4000; fi; done"));
 
                 write(new File(dir,"13-settings-provider.txt"),root(
                         "echo '=== relevant Settings.System ==='; settings list system 2>/dev/null | grep -iE 'icon|cell|grid|home|launcher|hotseat|folder' || true; " +
@@ -121,11 +128,13 @@ final class DiagnosticCollector {
 
     private static String summary(Context c){
         return "DesktopGridX diagnostic\n"+
-                "timestamp="+new Date()+"\nmodule_version=0.7.0\n"+
+                "timestamp="+new Date()+"\nmodule_version=0.8.0\n"+
                 "sdk="+Build.VERSION.SDK_INT+"\nrelease="+Build.VERSION.RELEASE+"\n"+
                 "device="+Build.MANUFACTURER+" "+Build.MODEL+"\n"+
                 "fingerprint="+Build.FINGERPRINT+"\npackage="+c.getPackageName()+"\n"+
-                "runtime_status=/data/adb/desktopgridx/runtime-status.conf\n"+
+                "java_status=Launcher cache/desktopgridx-java-runtime.conf\n"+
+                "native_status=/data/adb/desktopgridx/runtime-status.conf\n"+
+                "entry_policy=onModuleLoaded -> Java status -> System.loadLibrary -> NativeBridge.install -> ShadowHook\n"+
                 "locator_policy=GNU debugdata -> live ARM64 verify -> pre-init PreferenceUtils GridConfig -> conditional getter fallback -> known DB -> fail closed\n";
     }
 
