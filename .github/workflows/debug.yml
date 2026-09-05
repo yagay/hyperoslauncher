@@ -78,6 +78,10 @@ jobs:
           EXPORTS=$(readelf --dyn-syms -W /tmp/hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $7!="UND" {n=$8; sub(/@@.*/,"",n); if(n!="") print n}' | sort -u)
           test "$EXPORTS" = 'native_init'
 
+          echo '=== constructor probe ==='
+          readelf -SW /tmp/hyos.so | grep -F '.init_array'
+          strings /tmp/hyos.so | grep -F 'DGX_HYOS_CTOR pid='
+
           echo '=== DT_NEEDED ==='
           readelf -d /tmp/hyos.so | grep NEEDED || true
           if readelf -d /tmp/hyos.so | grep -E 'libshadowhook|libc\+\+_shared'; then
@@ -102,7 +106,7 @@ jobs:
           print('LOAD aligns=',aligns)
           if not aligns or min(aligns)<0x4000:
               raise SystemExit('HYOS LOAD alignment is below 16 KiB')
-          print('LSPosed 7869 Modern registration + HYOS native verification passed.')
+          print('LSPosed 7869 Modern registration + HYOS staged native verification passed.')
           PY
 
       - name: Upload debug APK
