@@ -7,8 +7,8 @@ import io.github.libxposed.api.XposedModuleInterface.PackageReadyParam;
 
 public final class HookEntry extends XposedModule {
     private static final String TAG = "DesktopGridX";
+    private static volatile boolean loaded;
     private static volatile boolean installed;
-    private static volatile boolean attemptedEarly;
 
     @Override
     public void onModuleLoaded(ModuleLoadedParam param) {
@@ -19,13 +19,11 @@ public final class HookEntry extends XposedModule {
         JavaRuntimeStatus.mark("system_server", param.isSystemServer() ? 1 : 0);
         JavaRuntimeStatus.mark("java_entry", 1);
 
-        if (!param.isSystemServer() && "com.miui.home".equals(process)) {
-            attemptedEarly = true;
-            JavaRuntimeStatus.mark("target_process_match", 1);
-            installNative("onModuleLoaded");
-        } else {
-            JavaRuntimeStatus.mark("target_process_match", 0);
-        }
+        // v0.10 loader-compatibility policy: as soon as LSPosed reaches the Java entry,
+        // load the native library. The native side decides whether libapp_launcher.so exists
+        // and therefore whether this is a target Launcher process. Do not rely on process-name
+        // matching in Java because HyperOS 4 may spawn Launcher through hyos_spawner.
+        loadAndInstall("onModuleLoaded");
     }
 
     @Override
@@ -34,34 +32,32 @@ public final class HookEntry extends XposedModule {
         JavaRuntimeStatus.mark("package_ready_seen", 1);
         JavaRuntimeStatus.mark("package_name", param.getPackageName());
         JavaRuntimeStatus.mark("package_first", param.isFirstPackage() ? 1 : 0);
-        if (!param.isFirstPackage() || !"com.miui.home".equals(param.getPackageName()) || installed) return;
-        log(Log.INFO, TAG, "package ready; earlyAttempt=" + attemptedEarly + ", retrying native install");
-        installNative("onPackageReady");
+        if (!installed) loadAndInstall("onPackageReady");
     }
 
-    private synchronized void installNative(String stage) {
+    private synchronized void loadAndInstall(String stage) {
         if (installed) return;
-        JavaRuntimeStatus.mark("stage", stage + ":before_loadLibrary");
-        JavaRuntimeStatus.mark("native_load_attempted", 1);
-        log(Log.INFO, TAG, "DGX_BEFORE_LOAD_LIBRARY stage=" + stage);
         try {
-            System.loadLibrary("desktopgridx");
-            JavaRuntimeStatus.mark("native_library_loaded", 1);
-            JavaRuntimeStatus.mark("stage", stage + ":after_loadLibrary");
-            log(Log.INFO, TAG, "DGX_AFTER_LOAD_LIBRARY stage=" + stage);
+            if (!loaded) {
+                JavaRuntimeStatus.mark("stage", stage + ":before_loadLibrary");
+                JavaRuntimeStatus.mark("native_load_attempted", 1);
+                log(Log.INFO, TAG, "DGX_BEFORE_LOAD_LIBRARY stage=" + stage);
+                System.loadLibrary("desktopgridx");
+                loaded = true;
+                JavaRuntimeStatus.mark("native_library_loaded", 1);
+                log(Log.INFO, TAG, "DGX_AFTER_LOAD_LIBRARY stage=" + stage);
+            }
 
             JavaRuntimeStatus.mark("native_install_attempted", 1);
             JavaRuntimeStatus.mark("stage", stage + ":before_native_install");
-            log(Log.INFO, TAG, "DGX_BEFORE_NATIVE_INSTALL stage=" + stage);
             int result = NativeBridge.install();
             JavaRuntimeStatus.mark("native_install_result", result);
             JavaRuntimeStatus.mark("stage", stage + ":after_native_install");
-            log(Log.INFO, TAG, "DGX_AFTER_NATIVE_INSTALL stage=" + stage + " result=" + result);
-
+            // 0=no overrides, 1=installed, 2=waiting for Launcher library are all successful states.
             installed = result >= 0;
             JavaRuntimeStatus.mark("installed", installed ? 1 : 0);
             log(result >= 0 ? Log.INFO : Log.ERROR, TAG,
-                    "native install stage=" + stage + " result=" + result + " installed=" + installed);
+                    "DGX_AFTER_NATIVE_INSTALL stage=" + stage + " result=" + result + " installed=" + installed);
         } catch (Throwable t) {
             installed = false;
             JavaRuntimeStatus.mark("installed", 0);
