@@ -1,33 +1,54 @@
 cmake_minimum_required(VERSION 3.22.1)
-project(desktopgridx)
+project(desktopgridx LANGUAGES CXX)
 
-set(CMAKE_ANDROID_STL_TYPE c++_static)
+if(NOT ANDROID)
+    message(FATAL_ERROR "DesktopGridX native targets require Android NDK")
+endif()
 
-# The only LSPosed/HYOS runtime payload. It talks directly to NativeAPIEntries
-# supplied by LSPosed 2.2.0-it 7869 and has no ShadowHook dependency.
-# hyos_stage_probe.cpp contributes only a constructor/logcat stage marker so we
-# can distinguish APK-backed mmap from a fully initialized ELF.
+if(NOT "${ANDROID_ABI}" STREQUAL "arm64-v8a")
+    message(FATAL_ERROR "Only arm64-v8a is supported; got '${ANDROID_ABI}'")
+endif()
+
+# HYOS runtime payload: intentionally STL-free to match known-good HyperOS 4
+# native modules. No libc++ static/shared runtime is linked into this library.
 add_library(desktopgridx_hyos SHARED hyos_hook.cpp hyos_stage_probe.cpp)
+target_compile_features(desktopgridx_hyos PRIVATE cxx_std_17)
 target_compile_options(desktopgridx_hyos PRIVATE
     -fno-exceptions
     -fno-rtti
     -fvisibility=hidden
+    -fvisibility-inlines-hidden
     -ffunction-sections
     -fdata-sections
+    -mbranch-protection=standard
+    -Wall
+    -Wextra
 )
 target_link_options(desktopgridx_hyos PRIVATE
+    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports-hyos.map"
     -Wl,--gc-sections
     -Wl,--no-undefined
     -Wl,-z,relro
     -Wl,-z,now
     -Wl,-z,max-page-size=16384
     -Wl,-z,common-page-size=16384
-    -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports-hyos.map
 )
-target_link_libraries(desktopgridx_hyos log dl)
+target_link_libraries(desktopgridx_hyos PRIVATE android log dl)
 
-# Small JNI-only offline verifier used by the configuration app. It is not an
-# Xposed entry and contains no hook/runtime code.
+# App-side offline ELF analyzer. Also STL-free so ANDROID_STL=none can apply to
+# the complete native build without reintroducing libc++ into the APK.
 add_library(desktopgridx SHARED native_analyzer.cpp)
-target_compile_options(desktopgridx PRIVATE -fvisibility=hidden -ffunction-sections -fdata-sections)
-target_link_options(desktopgridx PRIVATE -Wl,--gc-sections -Wl,--no-undefined -Wl,-z,relro -Wl,-z,now)
+target_compile_features(desktopgridx PRIVATE cxx_std_17)
+target_compile_options(desktopgridx PRIVATE
+    -fno-exceptions
+    -fno-rtti
+    -fvisibility=hidden
+    -ffunction-sections
+    -fdata-sections
+)
+target_link_options(desktopgridx PRIVATE
+    -Wl,--gc-sections
+    -Wl,--no-undefined
+    -Wl,-z,relro
+    -Wl,-z,now
+)
