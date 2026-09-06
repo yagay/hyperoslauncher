@@ -1,14 +1,14 @@
 #include <android/log.h>
-#include <cstdio>
-#include <cstring>
+#include <stdio.h>
+#include <string.h>
 #include <unistd.h>
 
 namespace {
 void read_cmdline(char* out, size_t cap) {
-    if (!out || cap == 0) return;
+    if (out == nullptr || cap == 0) return;
     out[0] = '\0';
     FILE* f = fopen("/proc/self/cmdline", "re");
-    if (!f) return;
+    if (f == nullptr) return;
     const size_t n = fread(out, 1, cap - 1, f);
     fclose(f);
     out[n] = '\0';
@@ -18,14 +18,13 @@ void read_cmdline(char* out, size_t cap) {
 }
 }
 
-// Stage-0 probe: this runs from ELF .init_array if the HYOS loader performs a
-// real dynamic-library initialization. It deliberately does not touch LSPosed,
-// Java, app storage, or the hook engine, so it cleanly distinguishes "mapped"
-// from "initialized".
+// Stage-0 probe: runs from ELF .init_array only when the HYOS loader performs
+// actual dynamic-library initialization. It intentionally uses no C++ runtime.
 __attribute__((constructor)) static void dgx_hyos_elf_constructor() {
     char cmdline[192]{};
     read_cmdline(cmdline, sizeof(cmdline));
     __android_log_print(ANDROID_LOG_INFO, "DesktopGridX",
                         "DGX_HYOS_CTOR pid=%d cmdline=%s",
-                        static_cast<int>(getpid()), cmdline[0] ? cmdline : "<unknown>");
+                        static_cast<int>(getpid()),
+                        cmdline[0] ? cmdline : "<unknown>");
 }
