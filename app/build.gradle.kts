@@ -8,13 +8,13 @@ android {
         applicationId = "com.yagay.desktopgridx"
         minSdk = 31
         targetSdk = 37
-        versionCode = 25
-        versionName = "0.25.0"
+        versionCode = 26
+        versionName = "0.26.0"
         ndk { abiFilters += listOf("arm64-v8a") }
         externalNativeBuild {
             cmake {
-                cppFlags += listOf("-std=c++20", "-fvisibility=hidden")
-                arguments += "-DANDROID_STL=c++_static"
+                cppFlags += listOf("-std=c++17", "-fvisibility=hidden")
+                arguments += "-DANDROID_STL=none"
             }
         }
     }
