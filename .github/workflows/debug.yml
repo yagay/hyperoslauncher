@@ -35,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify LSPosed 7869 dual registration + HYOS contract
+      - name: Verify LSPosed 7869 Modern + native compatibility contract
         shell: bash
         run: |
           set -euo pipefail
@@ -47,52 +47,38 @@ jobs:
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
-            assets/xposed_init \
             assets/native_init \
             lib/arm64-v8a/libdesktopgridx_hyos.so \
             lib/arm64-v8a/libdesktopgridx.so; do
             unzip -l "$APK" | grep -F "$F"
           done
 
-          echo '=== Modern registration ==='
           unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           test "$(unzip -p "$APK" META-INF/xposed/native_init.list)" = 'libdesktopgridx_hyos.so'
-
-          echo '=== Legacy compatibility registration ==='
-          unzip -p "$APK" assets/xposed_init | grep -Fx 'com.yagay.desktopgridx.LegacyHookEntry'
           test "$(unzip -p "$APK" assets/native_init)" = 'libdesktopgridx_hyos.so'
-
-          echo '=== API contract stays Modern 102 ==='
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
 
-          for OLD in lib/arm64-v8a/libshadowhook.so lib/arm64-v8a/libdesktopgridx_minprobe.so; do
-            if unzip -l "$APK" | grep -Fq "$OLD"; then
-              echo "obsolete runtime unexpectedly packaged: $OLD" >&2
-              exit 1
-            fi
-          done
-
-          # Both Xposed APIs are compileOnly. Their framework classes must not be bundled.
+          if unzip -l "$APK" | grep -Fq 'assets/xposed_init'; then
+            echo 'legacy Java xposed_init must not be packaged in API102 module' >&2
+            exit 1
+          fi
+          if unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libshadowhook.so|lib/arm64-v8a/libdesktopgridx_minprobe.so'; then
+            echo 'obsolete runtime unexpectedly packaged' >&2
+            exit 1
+          fi
           if unzip -l "$APK" | grep -Eq 'io/github/libxposed/api|de/robv/android/xposed'; then
             echo 'Xposed framework API classes were packaged into the module APK' >&2
             exit 1
           fi
 
           unzip -p "$APK" lib/arm64-v8a/libdesktopgridx_hyos.so > /tmp/hyos.so
-          echo '=== dynamic exports ==='
-          readelf --dyn-syms -W /tmp/hyos.so
           EXPORTS=$(readelf --dyn-syms -W /tmp/hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $7!="UND" {n=$8; sub(/@@.*/,"",n); if(n!="") print n}' | sort -u)
           test "$EXPORTS" = 'native_init'
-
-          echo '=== constructor probe ==='
           readelf -SW /tmp/hyos.so | grep -F '.init_array'
           strings /tmp/hyos.so | grep -F 'DGX_HYOS_CTOR pid='
-
-          echo '=== DT_NEEDED ==='
-          readelf -d /tmp/hyos.so | grep NEEDED || true
           if readelf -d /tmp/hyos.so | grep -E 'libshadowhook|libc\+\+_shared'; then
             echo 'HYOS entry has forbidden runtime dependency' >&2
             exit 1
@@ -115,7 +101,7 @@ jobs:
           print('LOAD aligns=',aligns)
           if not aligns or min(aligns)<0x4000:
               raise SystemExit('HYOS LOAD alignment is below 16 KiB')
-          print('LSPosed 7869 dual registration + HYOS staged native verification passed.')
+          print('LSPosed 7869 clean Modern API102 packaging verification passed.')
           PY
 
       - name: Upload debug APK
