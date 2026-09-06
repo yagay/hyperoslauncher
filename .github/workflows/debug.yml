@@ -35,7 +35,7 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon --stacktrace :app:assembleDebug
 
-      - name: Verify LSPosed 7869 Modern + native compatibility contract
+      - name: Verify LSPosed 7869 HYOS STL-free contract
         shell: bash
         run: |
           set -euo pipefail
@@ -47,7 +47,6 @@ jobs:
             META-INF/xposed/native_init.list \
             META-INF/xposed/module.prop \
             META-INF/xposed/scope.list \
-            assets/native_init \
             lib/arm64-v8a/libdesktopgridx_hyos.so \
             lib/arm64-v8a/libdesktopgridx.so; do
             unzip -l "$APK" | grep -F "$F"
@@ -55,18 +54,17 @@ jobs:
 
           unzip -p "$APK" META-INF/xposed/java_init.list | grep -Fx 'com.yagay.desktopgridx.HookEntry'
           test "$(unzip -p "$APK" META-INF/xposed/native_init.list)" = 'libdesktopgridx_hyos.so'
-          test "$(unzip -p "$APK" assets/native_init)" = 'libdesktopgridx_hyos.so'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'minApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'targetApiVersion=102'
           unzip -p "$APK" META-INF/xposed/module.prop | grep -Fx 'staticScope=true'
           unzip -p "$APK" META-INF/xposed/scope.list | grep -Fx 'com.miui.home'
 
-          if unzip -l "$APK" | grep -Fq 'assets/xposed_init'; then
-            echo 'legacy Java xposed_init must not be packaged in API102 module' >&2
+          if unzip -l "$APK" | grep -Eq 'assets/xposed_init|assets/native_init'; then
+            echo 'legacy Xposed compatibility entries must not be packaged' >&2
             exit 1
           fi
-          if unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libshadowhook.so|lib/arm64-v8a/libdesktopgridx_minprobe.so'; then
-            echo 'obsolete runtime unexpectedly packaged' >&2
+          if unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libshadowhook.so|lib/arm64-v8a/libdesktopgridx_minprobe.so|libc\+\+_shared.so'; then
+            echo 'obsolete or C++ runtime library unexpectedly packaged' >&2
             exit 1
           fi
           if unzip -l "$APK" | grep -Eq 'io/github/libxposed/api|de/robv/android/xposed'; then
@@ -75,12 +73,28 @@ jobs:
           fi
 
           unzip -p "$APK" lib/arm64-v8a/libdesktopgridx_hyos.so > /tmp/hyos.so
-          EXPORTS=$(readelf --dyn-syms -W /tmp/hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $7!="UND" {n=$8; sub(/@@.*/,"",n); if(n!="") print n}' | sort -u)
+          unzip -p "$APK" lib/arm64-v8a/libdesktopgridx.so > /tmp/analyzer.so
+
+          EXPORTS=$(readelf --dyn-syms -W /tmp/hyos.so | awk '$5=="GLOBAL" && $6=="DEFAULT" && $7!="UND" {print $8}' | sort -u)
           test "$EXPORTS" = 'native_init'
+          readelf --dyn-syms -W /tmp/hyos.so | grep -E '[[:space:]]native_init$'
+          if readelf --dyn-syms -W /tmp/hyos.so | grep -E 'native_init@'; then
+            echo 'native_init must be unversioned' >&2
+            exit 1
+          fi
+
           readelf -SW /tmp/hyos.so | grep -F '.init_array'
           strings /tmp/hyos.so | grep -F 'DGX_HYOS_CTOR pid='
-          if readelf -d /tmp/hyos.so | grep -E 'libshadowhook|libc\+\+_shared'; then
-            echo 'HYOS entry has forbidden runtime dependency' >&2
+          strings /tmp/hyos.so | grep -F 'DGX_NATIVE_ENTRY api='
+
+          for SO in /tmp/hyos.so /tmp/analyzer.so; do
+            if readelf -d "$SO" | grep -E 'libc\+\+|libstdc\+\+'; then
+              echo "$SO unexpectedly depends on a C++ runtime" >&2
+              exit 1
+            fi
+          done
+          if readelf -d /tmp/hyos.so | grep -E 'libshadowhook'; then
+            echo 'HYOS entry has forbidden ShadowHook dependency' >&2
             exit 1
           fi
 
@@ -101,7 +115,7 @@ jobs:
           print('LOAD aligns=',aligns)
           if not aligns or min(aligns)<0x4000:
               raise SystemExit('HYOS LOAD alignment is below 16 KiB')
-          print('LSPosed 7869 clean Modern API102 packaging verification passed.')
+          print('LSPosed 7869 HYOS STL-free API102 packaging verification passed.')
           PY
 
       - name: Upload debug APK
