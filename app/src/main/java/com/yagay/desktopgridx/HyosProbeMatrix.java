@@ -4,14 +4,13 @@ final class HyosProbeMatrix {
     private HyosProbeMatrix() {}
 
     static String collect() {
-        StringBuilder out=new StringBuilder("DesktopGridX LSPosed 7869 / HYOS Modern registration matrix\n");
+        StringBuilder out=new StringBuilder("DesktopGridX LSPosed 7869 / HYOS STL-free execution matrix\n");
         append(out,"=== A. module contract ===",RootShell.run(
                 "APK=$(pm path com.yagay.desktopgridx | head -n1 | cut -d: -f2); echo apk=$APK; " +
                 "echo '-- module.prop --'; unzip -p \"$APK\" META-INF/xposed/module.prop 2>/dev/null; echo; " +
-                "echo '-- modern java_init.list --'; unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null; echo; " +
-                "echo '-- modern native_init.list --'; unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null; echo; " +
-                "echo '-- compatibility native_init --'; unzip -p \"$APK\" assets/native_init 2>/dev/null; echo; " +
-                "echo '-- forbidden legacy Java entry --'; unzip -l \"$APK\" 2>/dev/null | grep 'assets/xposed_init' || true; " +
+                "echo '-- java_init.list --'; unzip -p \"$APK\" META-INF/xposed/java_init.list 2>/dev/null; echo; " +
+                "echo '-- native_init.list --'; unzip -p \"$APK\" META-INF/xposed/native_init.list 2>/dev/null; echo; " +
+                "echo '-- forbidden legacy entries --'; unzip -l \"$APK\" 2>/dev/null | grep -E 'assets/xposed_init|assets/native_init' || true; " +
                 "echo '-- scope.list --'; unzip -p \"$APK\" META-INF/xposed/scope.list 2>/dev/null; echo; " +
                 "echo '-- native libs --'; unzip -lv \"$APK\" 'lib/*/*.so' 2>/dev/null | head -n 100",
                 20,2*1024*1024));
@@ -27,11 +26,11 @@ final class HyosProbeMatrix {
 
         append(out,"=== D. staged execution evidence ===",RootShell.run(
                 "echo constructor_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'DGX_HYOS_CTOR' || true); " +
-                "echo modern_entry_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'DGX_MODERN_ENTRY' || true); " +
                 "echo native_entry_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'DGX_NATIVE_ENTRY' || true); " +
-                "echo launcher_callback_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'libapp_launcher callback install' || true); " +
+                "echo launcher_callback_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'libapp_launcher callback received' || true); " +
+                "echo hook_success_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'LSPosed hook OK' || true); " +
                 "echo dock_sink_callback_seen=$(logcat -d -b all -v brief -t 60000 2>/dev/null | grep -c 'DockSink: on_library_loaded' || true); " +
-                "echo '-- DesktopGridX stages --'; logcat -d -b all -v threadtime -t 60000 2>/dev/null | grep -E 'DGX_HYOS_CTOR|DGX_MODERN_ENTRY|DGX_NATIVE_ENTRY|libapp_launcher callback install|LSPosed hook OK|LSPosed hook failed' | tail -n 4000 || true; " +
+                "echo '-- DesktopGridX stages --'; logcat -d -b all -v threadtime -t 60000 2>/dev/null | grep -E 'DGX_HYOS_CTOR|DGX_NATIVE_ENTRY|libapp_launcher callback received|libapp_launcher install=|LSPosed hook OK|LSPosed hook failed' | tail -n 4000 || true; " +
                 "echo '-- DockSink successful native callback control --'; logcat -d -b all -v threadtime -t 60000 2>/dev/null | grep 'DockSink: on_library_loaded' | tail -n 300 || true",
                 35,6*1024*1024));
 
